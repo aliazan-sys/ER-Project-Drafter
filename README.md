@@ -45,13 +45,36 @@ Then open the URL Vite prints (usually http://localhost:5173).
 | `npm run client` | Runs only the Vite frontend (port 5173)       |
 | `npm run build`  | Production build of the frontend              |
 
+## Deploying (Vercel)
+
+GitHub Pages can't host this app — it's static-only and cannot run the proxy
+that hides your API key. **Vercel** serves the built frontend *and* runs the
+proxy as a serverless function (`api/draft.js`), so the key stays server-side.
+
+1. Push this repo to GitHub (already done).
+2. Go to https://vercel.com → **Add New… → Project** → import the repo.
+   Vercel auto-detects Vite (build `vite build`, output `dist`).
+3. In **Settings → Environment Variables**, add:
+   - `GEMINI_API_KEY` = your key  *(no `VITE_` prefix → stays server-side)*
+   - `GEMINI_MODEL` = `gemini-2.5-flash` *(optional)*
+4. **Deploy.** The app is live at `https://<project>.vercel.app`, and
+   `/api/draft` / `/api/health` run as serverless functions on the same domain.
+
+> After this, you can disable GitHub Pages for the repo — it was never able to
+> run the backend.
+
 ## Project structure
 
 ```
-server.js                     Express proxy — holds the API key, calls Gemini
+api/
+  draft.js                    Vercel serverless function (prod)  -> POST /api/draft
+  health.js                   Vercel serverless function (prod)  -> GET  /api/health
+shared/
+  gemini.js                   Shared key + prompt + schema (used by api/ and server.js)
+server.js                     LOCAL dev proxy (npm run dev) — reuses shared/gemini.js
 src/App.jsx                   Chat flow + state
 src/components/
-  ProjectDraftModal.jsx       The draft preview popup (Review screen)
+  ProjectDraftModal.jsx       The editable 7-step draft preview wizard
 src/lib/
   questions.js                The 4 intake questions
   api.js                      Frontend -> /api/draft helper
@@ -61,5 +84,5 @@ Reference Images/             The original 7-step form screenshots
 ## Changing the questions or model
 
 - Edit `src/lib/questions.js` to change what the bot asks.
-- Set `GEMINI_MODEL` in `.env` (default `gemini-2.0-flash`).
-- The output JSON shape lives in `server.js` (`responseSchema`).
+- Set `GEMINI_MODEL` in `.env` (local) or Vercel env vars (prod).
+- The output JSON shape lives in `shared/gemini.js` (`responseSchema`).
