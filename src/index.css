@@ -40,6 +40,45 @@ body {
   border-right: 1px solid var(--line);
 }
 
+/* ---------- Global navbar ---------- */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.nav-links {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-link {
+  text-decoration: none;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.nav-link:hover {
+  background: #f0f4f5;
+  color: var(--ink);
+}
+
+.nav-link.active {
+  background: rgba(21, 151, 165, 0.1);
+  color: var(--teal-dark);
+  border-color: rgba(21, 151, 165, 0.25);
+}
+
+/* ---------- Page sub-header ---------- */
 .topbar {
   display: flex;
   align-items: center;
@@ -48,10 +87,29 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.page-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.page-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
+  text-decoration: none;
+  color: inherit;
 }
 
 .brand-mark {

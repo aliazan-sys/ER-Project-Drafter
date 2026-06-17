@@ -10,7 +10,14 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
-import { MODEL, hasApiKey, generateDraft, GeminiError } from './shared/gemini.js'
+import {
+  MODEL,
+  hasApiKey,
+  generateDraft,
+  generateDraftFromConversation,
+  chatReply,
+  GeminiError,
+} from './shared/gemini.js'
 
 const app = express()
 app.use(cors())
@@ -22,9 +29,25 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, model: MODEL, keyConfigured: hasApiKey() })
 })
 
+// One conversational turn for the chatbot page.
+app.post('/api/chat', async (req, res) => {
+  try {
+    const result = await chatReply(req.body?.messages)
+    res.json(result)
+  } catch (err) {
+    if (err instanceof GeminiError) {
+      return res.status(err.status).json({ error: err.message, detail: err.detail })
+    }
+    res.status(500).json({ error: 'Unexpected server error.', detail: String(err) })
+  }
+})
+
+// Drafts from either the guided form's `answers` or the chatbot's `messages`.
 app.post('/api/draft', async (req, res) => {
   try {
-    const draft = await generateDraft(req.body?.answers)
+    const draft = req.body?.messages
+      ? await generateDraftFromConversation(req.body.messages)
+      : await generateDraft(req.body?.answers)
     res.json({ draft })
   } catch (err) {
     if (err instanceof GeminiError) {

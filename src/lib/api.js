@@ -14,6 +14,37 @@ export async function generateDraft(answers) {
   return data.draft
 }
 
+// One conversational turn. `messages` is the full transcript so far
+// ([{ role: 'bot' | 'user', text }]). Returns { reply, readyToDraft }.
+export async function sendChat(messages) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed (${res.status})`)
+  }
+  return data
+}
+
+// Drafts a full project request from a chatbot conversation transcript.
+export async function generateDraftFromChat(messages) {
+  const res = await fetch('/api/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed (${res.status})`)
+  }
+  return data.draft
+}
+
 export async function checkHealth() {
   try {
     const res = await fetch('/api/health')
