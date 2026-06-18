@@ -63,21 +63,54 @@ proxy as a serverless function (`api/draft.js`), so the key stays server-side.
 > After this, you can disable GitHub Pages for the repo — it was never able to
 > run the backend.
 
+## Saving conversations & drafts (Supabase)
+
+Every draft you create — on the **Guided Drafter** or the **AI Chatbot** — is
+saved to a Postgres database along with its conversation transcript, and listed
+on the **Saved Projects** page (`#/history`). This is **optional**: if no
+database is configured the app runs fine and just skips saving.
+
+Persistence uses one env var, `DATABASE_URL`, pointing at a Supabase Postgres.
+The two tables (`conversations`, `drafts`) are **created automatically** on first
+use — no manual SQL needed.
+
+1. Create a free project at https://supabase.com.
+2. In **Project → Settings → Database → Connection string**, copy the
+   **Transaction pooler** string (host ends in `…pooler.supabase.com:6543`) — it
+   is the serverless-safe one — and replace `[YOUR-PASSWORD]` with your DB
+   password.
+3. Set it as `DATABASE_URL`:
+   - **Local:** add the line to `.env`.
+   - **Vercel:** **Settings → Environment Variables → `DATABASE_URL`** (no
+     `VITE_` prefix → stays server-side), then redeploy.
+4. Create a draft. It appears under **Saved Projects**, and you can also browse
+   the rows in the Supabase Table Editor.
+
+> The `DATABASE_URL` is only ever read by the server (`server.js`) and the
+> serverless functions — never bundled into the browser.
+
 ## Project structure
 
 ```
 api/
-  draft.js                    Vercel serverless function (prod)  -> POST /api/draft
-  health.js                   Vercel serverless function (prod)  -> GET  /api/health
+  draft.js                    POST /api/draft         — generate + save a draft
+  chat.js                     POST /api/chat          — one chatbot turn
+  conversations.js            GET  /api/conversations — list / fetch saved history
+  health.js                   GET  /api/health
 shared/
-  gemini.js                   Shared key + prompt + schema (used by api/ and server.js)
-server.js                     LOCAL dev proxy (npm run dev) — reuses shared/gemini.js
-src/App.jsx                   Chat flow + state
+  gemini.js                   Shared key + prompts + schemas (api/ and server.js)
+  store.js                    Postgres persistence (Supabase) — best-effort
+server.js                     LOCAL dev proxy (npm run dev) — reuses shared/
+src/App.jsx                   Navbar + hash router (#/ , #/chat , #/history)
 src/components/
+  GuidedDrafter.jsx           Original fixed-question flow
+  ChatAgent.jsx               Free-form conversational chatbot
+  HistoryPage.jsx             Saved Projects list + transcript/draft viewer
+  Message.jsx                 Shared chat bubble
   ProjectDraftModal.jsx       The editable 7-step draft preview wizard
 src/lib/
-  questions.js                The 4 intake questions
-  api.js                      Frontend -> /api/draft helper
+  questions.js                The 4 intake questions (guided mode)
+  api.js                      Frontend -> /api helpers
 Reference Images/             The original 7-step form screenshots
 ```
 

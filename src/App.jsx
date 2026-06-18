@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react'
 import { checkHealth } from './lib/api.js'
 import GuidedDrafter from './components/GuidedDrafter.jsx'
 import ChatAgent from './components/ChatAgent.jsx'
+import HistoryPage from './components/HistoryPage.jsx'
 
-// Tiny hash router so the two experiences each have a shareable link:
-//   #/        → Guided Drafter (the original fixed-question flow)
-//   #/chat    → AI Chatbot (free-form conversation)
+// Tiny hash router so each experience has a shareable link:
+//   #/         → Guided Drafter (the original fixed-question flow)
+//   #/chat     → AI Chatbot (free-form conversation)
+//   #/history  → Saved Projects (conversations + drafts)
 function routeFromHash() {
-  return window.location.hash.replace(/^#\/?/, '') === 'chat' ? 'chat' : 'home'
+  const r = window.location.hash.replace(/^#\/?/, '')
+  if (r === 'chat') return 'chat'
+  if (r === 'history') return 'history'
+  return 'home'
 }
 
 export default function App() {
@@ -35,8 +40,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Remount on route change so each page starts its own fresh conversation. */}
-      {route === 'chat' ? <ChatAgent key="chat" /> : <GuidedDrafter key="home" />}
+      {/* Remount on route change so each page starts with its own fresh state. */}
+      {route === 'chat' && <ChatAgent key="chat" />}
+      {route === 'history' && <HistoryPage key="history" />}
+      {route === 'home' && <GuidedDrafter key="home" />}
     </div>
   )
 }
@@ -57,6 +64,9 @@ function Navbar({ route }) {
         </a>
         <a href="#/chat" className={`nav-link ${route === 'chat' ? 'active' : ''}`}>
           AI Chatbot
+        </a>
+        <a href="#/history" className={`nav-link ${route === 'history' ? 'active' : ''}`}>
+          Saved Projects
         </a>
       </div>
     </nav>

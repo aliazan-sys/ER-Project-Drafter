@@ -269,6 +269,93 @@ body {
   }
 }
 
+/* ---------- History / Saved Projects ---------- */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+}
+
+.history-empty {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 28px 22px;
+  text-align: center;
+}
+
+.history-empty p {
+  margin: 0 0 6px;
+}
+
+.history-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+
+.history-card:hover {
+  border-color: var(--teal);
+  box-shadow: var(--shadow);
+}
+
+.history-card:active {
+  transform: translateY(1px);
+}
+
+.history-card:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.history-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.history-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mode-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mode-badge.chat {
+  background: rgba(21, 151, 165, 0.1);
+  color: var(--teal-dark);
+}
+
+.mode-badge.guided {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
 /* ---------- Composer ---------- */
 .composer {
   border-top: 1px solid var(--line);

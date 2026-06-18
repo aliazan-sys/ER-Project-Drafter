@@ -45,6 +45,22 @@ export async function generateDraftFromChat(messages) {
   return data.draft
 }
 
+// History: list all saved conversations (newest first).
+export async function listConversations() {
+  const res = await fetch('/api/conversations')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data.conversations || []
+}
+
+// History: fetch one conversation's transcript + draft.
+export async function getConversation(id) {
+  const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data.conversation
+}
+
 export async function checkHealth() {
   try {
     const res = await fetch('/api/health')

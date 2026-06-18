@@ -18,6 +18,12 @@ import {
   chatReply,
   GeminiError,
 } from './shared/gemini.js'
+import {
+  saveSubmission,
+  answersToMessages,
+  listConversations,
+  getConversation,
+} from './shared/store.js'
 
 const app = express()
 app.use(cors())
@@ -42,18 +48,39 @@ app.post('/api/chat', async (req, res) => {
   }
 })
 
-// Drafts from either the guided form's `answers` or the chatbot's `messages`.
+// Drafts from either the guided form's `answers` or the chatbot's `messages`,
+// then persists the conversation + draft (best-effort).
 app.post('/api/draft', async (req, res) => {
   try {
-    const draft = req.body?.messages
-      ? await generateDraftFromConversation(req.body.messages)
-      : await generateDraft(req.body?.answers)
-    res.json({ draft })
+    const { messages, answers } = req.body || {}
+    const draft = messages
+      ? await generateDraftFromConversation(messages)
+      : await generateDraft(answers)
+
+    const mode = messages ? 'chat' : 'guided'
+    const transcript = messages || answersToMessages(answers)
+    const id = await saveSubmission({ mode, messages: transcript, draft })
+
+    res.json({ draft, id })
   } catch (err) {
     if (err instanceof GeminiError) {
       return res.status(err.status).json({ error: err.message, detail: err.detail })
     }
     res.status(500).json({ error: 'Unexpected server error.', detail: String(err) })
+  }
+})
+
+// History: list all saved conversations, or fetch one (with transcript + draft).
+app.get('/api/conversations', async (req, res) => {
+  try {
+    if (req.query.id) {
+      const row = await getConversation(req.query.id)
+      if (!row) return res.status(404).json({ error: 'Not found' })
+      return res.json({ conversation: row })
+    }
+    res.json({ conversations: await listConversations() })
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load conversations.', detail: String(err) })
   }
 })
 
