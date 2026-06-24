@@ -6,6 +6,11 @@ import { Message } from './Message.jsx'
 const GREETING =
   "Hi! I'm your EqualReach project assistant 👋  Tell me about the project you'd like to get done — in your own words is perfectly fine. I'll ask a couple of quick questions, then draft a full project request for you."
 
+// In the embedded chat-bubble widget the header gets a close button that tells
+// the host page (the Webflow launcher script) to collapse the iframe panel.
+const EMBED = new URLSearchParams(window.location.search).get('embed') === '1'
+const closeEmbed = () => window.parent?.postMessage({ type: 'er-chat-close' }, '*')
+
 // A free-form chatbot: the user describes their project, the AI asks a few
 // relevant follow-up questions (and explains anything they're unsure about),
 // then drafts the full project request once it has enough detail.
@@ -89,12 +94,29 @@ export default function ChatAgent() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="page-head">
-          <div className="page-title">AI Chatbot</div>
-          <div className="page-sub">Chat through your idea — I'll ask a few questions, then draft it</div>
-        </div>
-      </header>
+      {EMBED ? (
+        <header className="er-head">
+          <div className="er-head-id">
+            <span className="er-head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M12 2l2.35 6.5L21 10.8l-6.65 2.3L12 20l-2.35-6.9L3 10.8l6.65-2.3z" />
+              </svg>
+            </span>
+            <div>
+              <p className="er-head-name">EqualReach</p>
+              <p className="er-head-sub">Project Drafter</p>
+            </div>
+          </div>
+          <button className="er-head-close" onClick={closeEmbed} aria-label="Close chat">✕</button>
+        </header>
+      ) : (
+        <header className="topbar">
+          <div className="page-head">
+            <div className="page-title">AI Chatbot</div>
+            <div className="page-sub">Chat through your idea — I'll ask a few questions, then draft it</div>
+          </div>
+        </header>
+      )}
 
       <main className="chat" ref={scrollRef}>
         <div className="chat-inner">

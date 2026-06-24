@@ -15,6 +15,10 @@ function routeFromHash() {
   return 'home'
 }
 
+// Embed mode (?embed=1) renders ONLY the chatbot, with no navbar/banner, so it
+// can be dropped into an iframe (e.g. the Webflow chat-bubble widget).
+const EMBED = new URLSearchParams(window.location.search).get('embed') === '1'
+
 export default function App() {
   const [route, setRoute] = useState(routeFromHash)
   const [keyConfigured, setKeyConfigured] = useState(true)
@@ -28,6 +32,14 @@ export default function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  if (EMBED) {
+    return (
+      <div className="app embed">
+        <ChatAgent key="chat" />
+      </div>
+    )
+  }
 
   return (
     <div className="app">
