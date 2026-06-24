@@ -377,7 +377,7 @@ body {
 }
 
 .msg.bot .avatar {
-  background: var(--teal);
+  background: #00c4cc;
   color: #fff;
 }
 
@@ -396,8 +396,9 @@ body {
 }
 
 .msg.bot .bubble {
-  background: #f0f4f5;
-  border-top-left-radius: 4px;
+  background: #e6fbfb;
+  color: #04363a;
+  border-radius: 4px 16px 16px 16px;
 }
 
 .msg.user .bubble {

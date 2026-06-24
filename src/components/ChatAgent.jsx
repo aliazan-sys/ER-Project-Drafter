@@ -29,6 +29,14 @@ export default function ChatAgent() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, status])
 
+  // In the embedded widget the draft modal can't visually escape the small
+  // iframe, so ask the host launcher to expand the panel to full screen while
+  // the draft is open, and collapse it back to the bubble when it closes.
+  useEffect(() => {
+    if (!EMBED) return
+    window.parent?.postMessage({ type: modalOpen ? 'er-expand' : 'er-collapse' }, '*')
+  }, [modalOpen])
+
   const busy = status === 'thinking' || status === 'drafting'
 
   async function buildDraft(convo) {
