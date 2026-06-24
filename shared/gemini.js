@@ -7,9 +7,17 @@
 // Environment Variables.
 // ---------------------------------------------------------------------------
 
-export const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+// Provider selection: prefer OpenRouter when its key is present, otherwise fall
+// back to Gemini. Both read keys from process.env at call time; neither key is
+// ever sent to the browser.
+const useOpenRouter = () => Boolean(process.env.OPENROUTER_API_KEY)
 
-export const hasApiKey = () => Boolean(process.env.GEMINI_API_KEY)
+export const MODEL = process.env.OPENROUTER_API_KEY
+  ? process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash'
+  : process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+
+export const hasApiKey = () =>
+  Boolean(process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY)
 
 // JSON shape we ask Gemini to return. Mirrors the 7-step EqualReach
 // "Project Request" form from the reference images.
@@ -211,6 +219,85 @@ async function callGemini({ systemText, contents, schema, temperature = 0.7 }) {
   }
 }
 
+// Same contract as callGemini, but via OpenRouter's OpenAI-compatible Chat
+// Completions API. We convert Gemini's `contents` shape into OpenAI `messages`
+// and ask for a JSON object back. The schema is enforced by the detailed
+// instructions in `systemText` (every prompt already describes its JSON shape).
+async function callOpenRouter({ systemText, contents, temperature = 0.7 }) {
+  const API_KEY = process.env.OPENROUTER_API_KEY
+
+  const messages = [
+    { role: 'system', content: systemText },
+    ...(contents || []).map((c) => ({
+      role: c.role === 'user' ? 'user' : 'assistant',
+      content: (c.parts || []).map((p) => p.text).join(''),
+    })),
+  ]
+
+  let r
+  try {
+    r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${API_KEY}`, // key stays server-side
+        'X-Title': 'EqualReach Project Drafter',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        temperature,
+        response_format: { type: 'json_object' },
+      }),
+    })
+  } catch (err) {
+    throw new GeminiError(500, 'Request to OpenRouter failed.', String(err))
+  }
+
+  if (!r.ok) {
+    const detail = await r.text()
+    throw new GeminiError(r.status, `OpenRouter API error (${r.status})`, detail)
+  }
+
+  const data = await r.json()
+  const text = data?.choices?.[0]?.message?.content
+  if (!text) throw new GeminiError(502, 'Empty response from OpenRouter.')
+
+  const parsed = parseLooseJson(text)
+  if (parsed === undefined) {
+    throw new GeminiError(502, 'Could not parse OpenRouter JSON.', text)
+  }
+  return parsed
+}
+
+// `openrouter/auto` can route to models that don't strictly honour
+// response_format, so the JSON may come wrapped in ```json fences or with a
+// little surrounding prose. Strip fences, then fall back to the outermost
+// {...} block. Returns undefined if nothing parses.
+function parseLooseJson(text) {
+  const cleaned = text.replace(/```(?:json)?/gi, '').trim()
+  try {
+    return JSON.parse(cleaned)
+  } catch {
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1))
+      } catch {
+        return undefined
+      }
+    }
+    return undefined
+  }
+}
+
+// Provider-agnostic entry point used by every feature below. Routes to
+// OpenRouter when configured, else Gemini.
+function callModel(args) {
+  return useOpenRouter() ? callOpenRouter(args) : callGemini(args)
+}
+
 // Maps our { role: 'bot' | 'user', text } messages to Gemini's contents shape.
 const toContents = (messages) =>
   (messages || [])
@@ -226,7 +313,7 @@ export async function chatReply(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new GeminiError(400, 'Missing "messages" in request body.')
   }
-  return callGemini({
+  return callModel({
     systemText: buildChatSystemInstruction(today()),
     contents: toContents(messages),
     schema: chatResponseSchema,
@@ -248,7 +335,7 @@ export async function generateDraft(answers) {
       .join('\n\n') +
     '\n\nDraft the full EqualReach project request now.'
 
-  return callGemini({
+  return callModel({
     systemText: buildSystemInstruction(today()),
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
     schema: responseSchema,
@@ -271,7 +358,7 @@ export async function generateDraftFromConversation(messages) {
     transcript +
     '\n\nBased on this whole conversation, draft the full EqualReach project request now.'
 
-  return callGemini({
+  return callModel({
     systemText: buildSystemInstruction(today()),
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
     schema: responseSchema,
