@@ -70,6 +70,14 @@ export default function DraftPage() {
     <div className="draft-layout">
       {/* ── Left sidebar ── */}
       <aside className="draft-sidebar">
+        <div className="draft-sidebar-brand">
+          <span className="draft-brand-mark">◐</span>
+          <div>
+            <div className="draft-brand-name">EqualReach</div>
+            <div className="draft-brand-sub">Project Request Drafter</div>
+          </div>
+        </div>
+
         <div className="draft-sidebar-top">
           <button className="new-draft-btn" onClick={startNewChat}>
             <span className="new-draft-icon" aria-hidden="true">＋</span>

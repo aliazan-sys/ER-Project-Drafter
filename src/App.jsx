@@ -44,10 +44,24 @@ export default function App() {
     )
   }
 
-  // The draft page needs full viewport width (sidebar + chat panel), so we
-  // remove the 820px cap via the .wide modifier class on that route.
+  // The draft page is fully self-contained (brand lives in its sidebar),
+  // so we skip the navbar and remove the 820px cap entirely for that route.
+  if (route === 'draft') {
+    return (
+      <div className="app wide">
+        {!keyConfigured && (
+          <div className="banner">
+            ⚠️ No Gemini API key detected. Add <code>GEMINI_API_KEY</code> to your <code>.env</code> file and
+            restart the server.
+          </div>
+        )}
+        <DraftPage key="draft" />
+      </div>
+    )
+  }
+
   return (
-    <div className={`app ${route === 'draft' ? 'wide' : ''}`}>
+    <div className="app">
       <Navbar route={route} />
 
       {!keyConfigured && (
@@ -57,9 +71,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Remount on route change so each page starts with its own fresh state. */}
       {route === 'chat' && <ChatAgent key="chat" />}
-      {route === 'draft' && <DraftPage key="draft" />}
       {route === 'history' && <HistoryPage key="history" />}
       {route === 'home' && <GuidedDrafter key="home" />}
     </div>
