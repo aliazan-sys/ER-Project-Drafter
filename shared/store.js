@@ -43,10 +43,13 @@ function ensureSchema() {
       .query(`
         CREATE TABLE IF NOT EXISTS conversations (
           id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          visitor_id text,
           mode       text NOT NULL DEFAULT 'chat',
           messages   jsonb NOT NULL DEFAULT '[]'::jsonb,
           created_at timestamptz NOT NULL DEFAULT now()
         );
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS visitor_id text;
+        CREATE INDEX IF NOT EXISTS conversations_visitor_idx ON conversations(visitor_id);
         CREATE TABLE IF NOT EXISTS drafts (
           id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           conversation_id uuid REFERENCES conversations(id) ON DELETE CASCADE,
@@ -76,7 +79,7 @@ export function answersToMessages(answers = {}) {
 // Saves a conversation and its generated draft. Returns the new conversation id,
 // or null when storage isn't configured. Never throws — persistence is
 // best-effort and must not break draft generation.
-export async function saveSubmission({ mode = 'chat', messages = [], draft }) {
+export async function saveSubmission({ mode = 'chat', messages = [], draft, visitorId }) {
   if (!isConfigured() || !draft) return null
   try {
     await ensureSchema()
@@ -84,8 +87,8 @@ export async function saveSubmission({ mode = 'chat', messages = [], draft }) {
     try {
       await client.query('BEGIN')
       const conv = await client.query(
-        'INSERT INTO conversations (mode, messages) VALUES ($1, $2::jsonb) RETURNING id',
-        [mode, JSON.stringify(messages)]
+        'INSERT INTO conversations (mode, messages, visitor_id) VALUES ($1, $2::jsonb, $3) RETURNING id',
+        [mode, JSON.stringify(messages), visitorId || null]
       )
       const conversationId = conv.rows[0].id
       await client.query(
@@ -106,21 +109,23 @@ export async function saveSubmission({ mode = 'chat', messages = [], draft }) {
   }
 }
 
-// Returns a summary list of saved conversations, newest first.
-export async function listConversations() {
+// Returns conversations for a specific visitor (or all if no visitorId), newest first.
+export async function listConversations(visitorId) {
   if (!isConfigured()) return []
   await ensureSchema()
-  const { rows } = await pool().query(`
-    SELECT c.id,
-           c.mode,
-           c.created_at,
-           d.title,
-           jsonb_array_length(c.messages) AS message_count
-    FROM conversations c
-    LEFT JOIN drafts d ON d.conversation_id = c.id
-    ORDER BY c.created_at DESC
-    LIMIT 200
-  `)
+  const { rows } = await pool().query(
+    `SELECT c.id,
+            c.mode,
+            c.created_at,
+            d.title,
+            jsonb_array_length(c.messages) AS message_count
+     FROM conversations c
+     LEFT JOIN drafts d ON d.conversation_id = c.id
+     WHERE ($1::text IS NULL OR c.visitor_id = $1)
+     ORDER BY c.created_at DESC
+     LIMIT 200`,
+    [visitorId || null]
+  )
   return rows
 }
 

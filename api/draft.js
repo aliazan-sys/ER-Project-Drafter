@@ -19,7 +19,8 @@ export default async function handler(req, res) {
 
     const mode = body.messages ? 'chat' : 'guided'
     const transcript = body.messages || answersToMessages(body.answers)
-    const id = await saveSubmission({ mode, messages: transcript, draft })
+    const visitorId = req.headers['x-visitor-id'] || null
+    const id = await saveSubmission({ mode, messages: transcript, draft, visitorId })
 
     return res.status(200).json({ draft, id })
   } catch (err) {

@@ -10,13 +10,14 @@ export default async function handler(req, res) {
   }
 
   try {
+    const visitorId = req.headers['x-visitor-id'] || null
     const id = req.query?.id
     if (id) {
       const row = await getConversation(id)
       if (!row) return res.status(404).json({ error: 'Not found' })
       return res.status(200).json({ conversation: row })
     }
-    return res.status(200).json({ conversations: await listConversations() })
+    return res.status(200).json({ conversations: await listConversations(visitorId) })
   } catch (err) {
     return res.status(500).json({ error: 'Could not load conversations.', detail: String(err) })
   }
