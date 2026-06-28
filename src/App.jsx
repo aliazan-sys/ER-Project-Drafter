@@ -18,9 +18,11 @@ function routeFromHash() {
   return 'home'
 }
 
-// Embed mode (?embed=1) renders ONLY the chatbot, with no navbar/banner, so it
-// can be dropped into an iframe (e.g. the Webflow chat-bubble widget).
-const EMBED = new URLSearchParams(window.location.search).get('embed') === '1'
+// ?embed=1      → chat bubble widget (existing)
+// ?embed=draft  → Project Drafter full-page iframe for Webflow ai_drafter page
+const params = new URLSearchParams(window.location.search)
+const EMBED = params.get('embed') === '1'
+const EMBED_DRAFT = params.get('embed') === 'draft'
 
 export default function App() {
   const [route, setRoute] = useState(routeFromHash)
@@ -36,12 +38,19 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // Chat bubble widget — stripped UI for the Webflow floating button
   if (EMBED) {
     return (
       <div className="app embed">
         <ChatAgent key="chat" />
       </div>
     )
+  }
+
+  // Project Drafter iframe embed — position: fixed so the layout is always
+  // bound to the iframe viewport and the Webflow page never scrolls.
+  if (EMBED_DRAFT) {
+    return <DraftPage key="draft-embed" embedMode />
   }
 
   // The draft page is fully self-contained (brand lives in its sidebar),

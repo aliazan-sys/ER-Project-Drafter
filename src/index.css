@@ -1281,6 +1281,14 @@ button.edit-pencil {
   min-height: 0;
 }
 
+/* Iframe embed mode (?embed=draft): fixed to the iframe viewport so the
+   Webflow parent page never scrolls regardless of iframe height setting. */
+.draft-layout-embed {
+  position: fixed;
+  inset: 0;
+  background: var(--panel);
+}
+
 /* ── Left sidebar ── */
 .draft-sidebar {
   width: 260px;
