@@ -21,7 +21,6 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  overflow: hidden;
 }
 
 body {
@@ -34,6 +33,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
   max-width: 820px;
   margin: 0 auto;
   background: var(--panel);
