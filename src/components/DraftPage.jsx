@@ -16,10 +16,7 @@ function formatDate(value) {
 // ChatGPT / Claude-style two-panel layout:
 //   Left  → scrollable history sidebar (past drafts)
 //   Right → active chat panel (new draft) or read-only transcript (history selected)
-//
-// embedMode: true when loaded via ?embed=draft inside a Webflow iframe.
-// Uses position:fixed so the layout is always bound to the iframe viewport.
-export default function DraftPage({ embedMode = false }) {
+export default function DraftPage() {
   const [history, setHistory] = useState([])
   const [historyStatus, setHistoryStatus] = useState('loading')
 
@@ -70,7 +67,7 @@ export default function DraftPage({ embedMode = false }) {
   }
 
   return (
-    <div className={`draft-layout${embedMode ? ' draft-layout-embed' : ''}`}>
+    <div className="draft-layout">
       {/* ── Left sidebar ── */}
       <aside className="draft-sidebar">
         <div className="draft-sidebar-brand">

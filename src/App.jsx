@@ -47,10 +47,14 @@ export default function App() {
     )
   }
 
-  // Project Drafter iframe embed — position: fixed so the layout is always
-  // bound to the iframe viewport and the Webflow page never scrolls.
+  // Project Drafter iframe embed — same .app.wide wrapper as the normal
+  // draft route so height: 100vh + overflow: hidden are always applied.
   if (EMBED_DRAFT) {
-    return <DraftPage key="draft-embed" embedMode />
+    return (
+      <div className="app wide">
+        <DraftPage key="draft-embed" />
+      </div>
+    )
   }
 
   // The draft page is fully self-contained (brand lives in its sidebar),
