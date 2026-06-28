@@ -31,6 +31,7 @@ export async function sendChat(messages) {
 }
 
 // Drafts a full project request from a chatbot conversation transcript.
+// Returns { draft, id } — id is the saved conversation row id.
 export async function generateDraftFromChat(messages) {
   const res = await fetch('/api/draft', {
     method: 'POST',
@@ -42,7 +43,7 @@ export async function generateDraftFromChat(messages) {
   if (!res.ok) {
     throw new Error(data.error || `Request failed (${res.status})`)
   }
-  return data.draft
+  return { draft: data.draft, id: data.id }
 }
 
 // History: list all saved conversations (newest first).

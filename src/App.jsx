@@ -3,14 +3,17 @@ import { checkHealth } from './lib/api.js'
 import GuidedDrafter from './components/GuidedDrafter.jsx'
 import ChatAgent from './components/ChatAgent.jsx'
 import HistoryPage from './components/HistoryPage.jsx'
+import DraftPage from './components/DraftPage.jsx'
 
 // Tiny hash router so each experience has a shareable link:
 //   #/         → Guided Drafter (the original fixed-question flow)
 //   #/chat     → AI Chatbot (free-form conversation)
+//   #/draft    → Project Drafter (ChatGPT-style: sidebar history + chat)
 //   #/history  → Saved Projects (conversations + drafts)
 function routeFromHash() {
   const r = window.location.hash.replace(/^#\/?/, '')
   if (r === 'chat') return 'chat'
+  if (r === 'draft') return 'draft'
   if (r === 'history') return 'history'
   return 'home'
 }
@@ -41,8 +44,10 @@ export default function App() {
     )
   }
 
+  // The draft page needs full viewport width (sidebar + chat panel), so we
+  // remove the 820px cap via the .wide modifier class on that route.
   return (
-    <div className="app">
+    <div className={`app ${route === 'draft' ? 'wide' : ''}`}>
       <Navbar route={route} />
 
       {!keyConfigured && (
@@ -54,6 +59,7 @@ export default function App() {
 
       {/* Remount on route change so each page starts with its own fresh state. */}
       {route === 'chat' && <ChatAgent key="chat" />}
+      {route === 'draft' && <DraftPage key="draft" />}
       {route === 'history' && <HistoryPage key="history" />}
       {route === 'home' && <GuidedDrafter key="home" />}
     </div>
@@ -76,6 +82,9 @@ function Navbar({ route }) {
         </a>
         <a href="#/chat" className={`nav-link ${route === 'chat' ? 'active' : ''}`}>
           AI Chatbot
+        </a>
+        <a href="#/draft" className={`nav-link ${route === 'draft' ? 'active' : ''}`}>
+          Project Drafter
         </a>
         <a href="#/history" className={`nav-link ${route === 'history' ? 'active' : ''}`}>
           Saved Projects

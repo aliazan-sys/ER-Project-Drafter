@@ -14,7 +14,7 @@ const closeEmbed = () => window.parent?.postMessage({ type: 'er-chat-close' }, '
 // A free-form chatbot: the user describes their project, the AI asks a few
 // relevant follow-up questions (and explains anything they're unsure about),
 // then drafts the full project request once it has enough detail.
-export default function ChatAgent() {
+export default function ChatAgent({ onDraftSaved } = {}) {
   const [messages, setMessages] = useState([{ role: 'bot', text: GREETING }])
   const [input, setInput] = useState('')
   // chatting | thinking | drafting | done | error
@@ -42,7 +42,7 @@ export default function ChatAgent() {
   async function buildDraft(convo) {
     setStatus('drafting')
     try {
-      const result = await generateDraftFromChat(convo)
+      const { draft: result, id } = await generateDraftFromChat(convo)
       setDraft(result)
       setStatus('done')
       setModalOpen(true)
@@ -50,6 +50,7 @@ export default function ChatAgent() {
         ...m,
         { role: 'bot', text: '✅ Your project request draft is ready — opening the preview now.' },
       ])
+      onDraftSaved?.(id)
     } catch (err) {
       setStatus('error')
       setError(err.message || 'Something went wrong.')
