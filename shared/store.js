@@ -123,8 +123,7 @@ export async function listConversations(visitorId) {
      LEFT JOIN drafts d ON d.conversation_id = c.id
      WHERE (1=1)
      ORDER BY c.created_at DESC
-     LIMIT 200`,
-    [visitorId || null]
+     LIMIT 200`
   )
   return rows
 }
