@@ -121,7 +121,7 @@ export async function listConversations(visitorId) {
             jsonb_array_length(c.messages) AS message_count
      FROM conversations c
      LEFT JOIN drafts d ON d.conversation_id = c.id
-     WHERE ($1::text IS NULL OR c.visitor_id = $1)
+     WHERE (1=1)
      ORDER BY c.created_at DESC
      LIMIT 200`,
     [visitorId || null]
