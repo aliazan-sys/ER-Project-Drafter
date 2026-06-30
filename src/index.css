@@ -1482,3 +1482,110 @@ button.edit-pencil {
     display: none;
   }
 }
+
+/* =====================================================================
+   Project Drafter — centered pill input, no sidebar
+   ===================================================================== */
+
+.chat-panel-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Welcome / empty state ── */
+.chat-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 24px 120px;
+}
+
+.chat-welcome-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+/* Pill input — welcome state */
+.chat-pill-form {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 660px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 8px 8px 18px;
+  gap: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.chat-pill-form:focus-within {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(21, 151, 165, 0.12);
+}
+
+.chat-pill-form textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-size: 15px;
+  font-family: inherit;
+  resize: none;
+  padding: 0;
+  line-height: 1.5;
+  overflow-y: hidden;
+}
+
+.chat-pill-form textarea::placeholder {
+  color: var(--muted);
+}
+
+.chat-pill-send {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.chat-pill-send:hover:not(:disabled) {
+  background: var(--teal-dark);
+}
+
+.chat-pill-send:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Pill override for active composer ── */
+.composer-pill {
+  border-radius: 999px !important;
+  padding: 8px 8px 8px 18px !important;
+  align-items: center !important;
+}
+
+.composer-pill textarea {
+  overflow-y: hidden;
+}

@@ -38,9 +38,13 @@ app.get('/api/health', (_req, res) => {
 // One conversational turn for the chatbot page.
 app.post('/api/chat', async (req, res) => {
   try {
-    const result = await chatReply(req.body?.messages)
+    const messages = req.body?.messages
+    console.log('\n[/api/chat] messages received:', JSON.stringify(messages, null, 2))
+    const result = await chatReply(messages)
+    console.log('[/api/chat] result:', JSON.stringify(result))
     res.json(result)
   } catch (err) {
+    console.error('[/api/chat] error:', err)
     if (err instanceof GeminiError) {
       return res.status(err.status).json({ error: err.message, detail: err.detail })
     }

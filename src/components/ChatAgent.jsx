@@ -66,6 +66,12 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     const value = input.trim()
     if (!value || busy || status === 'done') return
 
+    if (EMBED) {
+      localStorage.setItem('er_initial_prompt', value)
+      window.parent.location.href = 'https://equalreach.webflow.io/project-drafter-equalreach'
+      return
+    }
+
     const convo = [...messages, { role: 'user', text: value }]
     setMessages(convo)
     setInput('')
