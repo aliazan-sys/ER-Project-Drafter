@@ -24,10 +24,21 @@ export default function ChatAgent({ onDraftSaved } = {}) {
   const [error, setError] = useState('')
 
   const scrollRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, status])
+
+  // Grow the input with its content (up to a cap), like the Project Drafter.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const next = Math.min(el.scrollHeight, 120)
+    el.style.height = `${next}px`
+    el.style.overflowY = el.scrollHeight > 120 ? 'auto' : 'hidden'
+  }, [input])
 
   // In the embedded widget the draft modal can't visually escape the small
   // iframe, so ask the host launcher to expand the panel to full screen while
@@ -66,12 +77,10 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     const value = input.trim()
     if (!value || busy || status === 'done') return
 
-    if (EMBED) {
-      localStorage.setItem('er_initial_prompt', value)
-      window.parent.location.href = 'https://equalreach.webflow.io/project-drafter-equalreach'
-      return
-    }
-
+    // The embedded bubble runs the full drafter self-contained: it chats and
+    // opens the draft modal inside the iframe (the host launcher full-screens
+    // the panel on the er-expand message), exactly like the standalone app —
+    // no redirect to a separate Webflow page.
     const convo = [...messages, { role: 'user', text: value }]
     setMessages(convo)
     setInput('')
@@ -144,8 +153,9 @@ export default function ChatAgent({ onDraftSaved } = {}) {
       </main>
 
       <footer className="composer">
-        <form onSubmit={handleSend} className="composer-inner">
+        <form onSubmit={handleSend} className="composer-inner composer-pill">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -165,12 +175,12 @@ export default function ChatAgent({ onDraftSaved } = {}) {
             rows={1}
           />
           {status === 'done' || status === 'error' ? (
-            <button type="button" className="send" onClick={restart}>
-              New chat
+            <button type="button" className="chat-pill-send" onClick={restart} title="New chat">
+              ↺
             </button>
           ) : (
-            <button type="submit" className="send" disabled={!input.trim() || busy}>
-              Send
+            <button type="submit" className="chat-pill-send" disabled={!input.trim() || busy} aria-label="Send">
+              ↑
             </button>
           )}
         </form>

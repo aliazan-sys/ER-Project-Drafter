@@ -8,3 +8,5 @@ dist
 
 # Claude Code machine-local settings (personal permissions, not shared)
 .claude/settings.local.json
+
+.vercel

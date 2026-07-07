@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-
-const SIGNUP_URL = 'https://app.equalreach.io/signup'
+import { submitDraftSignup } from '../lib/api.js'
 
 const STEPS = [
   { id: 'title', label: 'Title' },
@@ -19,7 +18,7 @@ const COMPLEXITY = [
 ]
 
 const PRICING = ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure']
-const CURRENCIES = ['GBP', 'USD', 'EUR', 'CAD', 'AUD', 'INR']
+const CURRENCIES = ['GBP', 'EUR', 'USD']
 const EXPERIENCE = [
   { value: 'Entry', desc: 'Ideal for someone starting their journey in this field' },
   { value: 'Intermediate', desc: 'Requires strong experience and proven proficiency' },
@@ -31,6 +30,7 @@ const EXPERIENCE = [
 export default function ProjectDraftModal({ draft, onClose, onSave }) {
   const [form, setForm] = useState(() => normalize(draft))
   const [step, setStep] = useState(0)
+  const [signupOpen, setSignupOpen] = useState(false)
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && close()
@@ -45,9 +45,10 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
   }
 
   function handleSignup() {
-    // Persist edits, then hand off to the EqualReach web app signup.
+    // Persist edits, then open the email-capture modal. The actual submit to
+    // the EqualReach web app happens from there once we have an email.
     onSave?.(form)
-    window.open(SIGNUP_URL, '_blank', 'noopener,noreferrer')
+    setSignupOpen(true)
   }
 
   // Generic setters --------------------------------------------------------
@@ -152,16 +153,19 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                   onChange={(v) => set('budget.pricingType', v)}
                   columns={2}
                 />
+                <div>
+                  <Label>Currency</Label>
+                  <select className="inp" value={form.budget.currency} onChange={(e) => set('budget.currency', e.target.value)}>
+                    {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <Label style={{ marginTop: 18 }}>Estimated Cost</Label>
                 <div className="two-col">
                   <div>
-                    <Label>Currency</Label>
-                    <select className="inp" value={form.budget.currency} onChange={(e) => set('budget.currency', e.target.value)}>
-                      {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-                    </select>
+                    <input className="inp" value={form.budget.estimatedCostFrom} onChange={(e) => set('budget.estimatedCostFrom', e.target.value)} placeholder="From e.g. £4,500" />
                   </div>
                   <div>
-                    <Label>Estimated Cost</Label>
-                    <input className="inp" value={form.budget.estimatedCost} onChange={(e) => set('budget.estimatedCost', e.target.value)} placeholder="e.g. £5,000" />
+                    <input className="inp" value={form.budget.estimatedCostTo} onChange={(e) => set('budget.estimatedCostTo', e.target.value)} placeholder="To e.g. £5,500" />
                   </div>
                 </div>
                 <Label style={{ marginTop: 18 }}>Additional comments on pricing</Label>
@@ -208,6 +212,140 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
           </div>
         </div>
       </div>
+
+      {signupOpen && (
+        <SignupModal draft={form} onClose={() => setSignupOpen(false)} />
+      )}
+    </div>
+  )
+}
+
+// --- Email capture + submit to the EqualReach web app ---------------------
+function SignupModal({ draft, onClose }) {
+  const [email, setEmail] = useState('')
+  const [organizationName, setOrganizationName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [status, setStatus] = useState('idle') // idle | submitting | done | error
+  const [error, setError] = useState('')
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const valid =
+    emailValid &&
+    organizationName.trim() !== '' &&
+    firstName.trim() !== '' &&
+    lastName.trim() !== ''
+
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && status !== 'submitting' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [status, onClose])
+
+  async function submit(e) {
+    e?.preventDefault()
+    if (!valid || status === 'submitting') return
+    setStatus('submitting')
+    setError('')
+    try {
+      await submitDraftSignup(email.trim(), draft, {
+        organizationName: organizationName.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+      })
+      setStatus('done')
+    } catch (err) {
+      setStatus('error')
+      setError(err.message || 'Something went wrong. Please try again.')
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={() => status !== 'submitting' && onClose()}>
+      <div className="signup-card" onClick={(e) => e.stopPropagation()}>
+        <button className="icon-btn signup-close" onClick={onClose} aria-label="Close" disabled={status === 'submitting'}>✕</button>
+
+        {status === 'done' ? (
+          <div className="signup-done">
+            <div className="signup-check">✓</div>
+            <h2 className="signup-title">You're all set!</h2>
+            <p className="signup-sub">
+              We've saved your project draft and sent a link to <strong>{email.trim()}</strong> to
+              finish setting up your account.
+            </p>
+            <button className="btn primary signup-submit" onClick={onClose}>Done</button>
+          </div>
+        ) : (
+          <form onSubmit={submit}>
+            <h2 className="signup-title">Submit your project</h2>
+            <p className="signup-sub">
+              Enter your email and we'll create your EqualReach account with this project draft
+              ready to go.
+            </p>
+
+            <label className="flabel" htmlFor="signup-org">Organization name <span className="req">*</span></label>
+            <input
+              id="signup-org"
+              className="inp"
+              type="text"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
+              placeholder="Acme Inc."
+              autoFocus
+              disabled={status === 'submitting'}
+            />
+
+            <div className="two-col">
+              <div>
+                <label className="flabel" htmlFor="signup-first">First name <span className="req">*</span></label>
+                <input
+                  id="signup-first"
+                  className="inp"
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Jane"
+                  disabled={status === 'submitting'}
+                />
+              </div>
+              <div>
+                <label className="flabel" htmlFor="signup-last">Last name <span className="req">*</span></label>
+                <input
+                  id="signup-last"
+                  className="inp"
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Doe"
+                  disabled={status === 'submitting'}
+                />
+              </div>
+            </div>
+
+            <label className="flabel" htmlFor="signup-email" style={{ marginTop: 18 }}>Email address <span className="req">*</span></label>
+            <input
+              id="signup-email"
+              className="inp"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@company.com"
+              disabled={status === 'submitting'}
+            />
+
+            {status === 'error' && <p className="signup-error">⚠️ {error}</p>}
+
+            <button
+              type="submit"
+              className="btn primary signup-submit"
+              disabled={!valid || status === 'submitting'}
+            >
+              {status === 'submitting' ? 'Submitting…' : 'Sign up to submit'}
+            </button>
+            <p className="signup-fine">By continuing you agree to EqualReach's terms and privacy policy.</p>
+          </form>
+        )}
+      </div>
     </div>
   )
 }
@@ -246,7 +384,7 @@ function ReviewStep({ form, set, goTo }) {
         <div className="grid-3">
           <Field icon="$" label="Currency" value={form.budget.currency} />
           <Field icon="▭" label="Payment Type" value={form.budget.pricingType} />
-          <Field icon="▥" label="Estimated Cost" value={form.budget.estimatedCost} />
+          <Field icon="▥" label="Estimated Cost" value={costRange(form.budget)} />
         </div>
       </SummaryCard>
 
@@ -435,6 +573,13 @@ function Paragraphs({ text }) {
   return String(text).split(/\n{2,}|\n/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)
 }
 
+function costRange(budget) {
+  const from = budget.estimatedCostFrom
+  const to = budget.estimatedCostTo
+  if (from && to) return `${from} – ${to}`
+  return from || to || 'N/A'
+}
+
 function timeline(scope) {
   if (scope.startDate && scope.completionDate) return `${scope.startDate} → ${scope.completionDate}`
   return scope.startDate || scope.completionDate || 'N/A'
@@ -447,7 +592,15 @@ function normalize(d = {}) {
     categories: d.categories || [],
     skills: d.skills || [],
     scope: { complexity: '', startDate: '', completionDate: '', ...(d.scope || {}) },
-    budget: { pricingType: '', currency: 'GBP', estimatedCost: '', comments: '', ...(d.budget || {}) },
+    budget: {
+      pricingType: '',
+      estimatedCostFrom: '',
+      estimatedCostTo: '',
+      comments: '',
+      ...(d.budget || {}),
+      // Only GBP/EUR/USD are supported (matches the Bubble currency Option Set).
+      currency: CURRENCIES.includes(d.budget?.currency) ? d.budget.currency : 'GBP',
+    },
     description: d.description || '',
     existingAssets: d.existingAssets || '',
     projectGoals: { impactGoal: '', impactDescription: '', ...(d.projectGoals || {}) },

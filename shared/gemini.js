@@ -43,7 +43,8 @@ export const responseSchema = {
           enum: ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure'],
         },
         currency: { type: 'string' },
-        estimatedCost: { type: 'string' },
+        estimatedCostFrom: { type: 'string' },
+        estimatedCostTo: { type: 'string' },
         comments: { type: 'string' },
       },
     },
@@ -102,7 +103,14 @@ Guidelines:
   defaults if the user didn't say.
 - budget.pricingType: best fit of Per Unit / Monthly Rate / Fixed Price / Not Sure.
 - budget.currency: default "GBP" unless the user implies otherwise.
-- budget.estimatedCost: a realistic figure or range with the currency symbol.
+- budget.estimatedCostFrom / budget.estimatedCostTo: the lower and upper bounds
+  of a realistic cost range, each with the currency symbol (e.g. "£4,500" and
+  "£5,500"). estimatedCostTo must be greater than or equal to estimatedCostFrom.
+  If the user gives a single exact figure, turn it into a range by spreading
+  around it rather than repeating the same number: normally ±50 (e.g. "400 USD"
+  -> From 350 To 450). For small budgets where ±50 would be too wide relative to
+  the amount, use a tighter spread of about ±20 (e.g. "60 USD" -> From 40 To 80).
+  Never let estimatedCostFrom go below zero — clamp the lower bound at 0.
 - description: 2-4 rich paragraphs covering deliverables, success criteria,
   collaboration style and scope clarity (this is the meatiest field).
 - existingAssets: what the client likely already has, or "None specified" if truly none.
@@ -146,6 +154,12 @@ Rules:
 - Ask one question per reply. One short sentence. Nothing else.
 - Never ask about a field that has already been answered, even partially.
 - If a field can be reasonably inferred from what the user said, treat it as answered — do not ask again.
+- A single user message can answer several fields (or several parts of one field) at once. Decompose it fully and mark every part it covers before deciding what to ask next.
+- Budget has two parts — the amount AND the pricing type. Infer the pricing type from how the amount is phrased and do NOT ask about it separately when the phrasing already makes it clear:
+  - "per month", "monthly", "a month", "/mo", "retainer" -> Monthly Rate
+  - "per hour", "per day", "per unit", "per item", "each", "hourly" -> Per Unit
+  - "total", "in total", "one-off", "fixed", "flat" or a lone lump sum -> Fixed Price
+  Only ask about pricing type if the amount is given with no wording that implies one.
 - Field 5 is optional — if nothing relevant is missing, skip it.
 
 STRICT OUTPUT RULE — your reply must be ONLY the next question (or the closing line). Nothing before it, nothing after it.
@@ -162,6 +176,11 @@ Your reply is ONE sentence: the question. That is all.
 Example — if the user says "I want to build a website for my charity":
 WRONG: "That's wonderful! A website can really help your charity reach more people. What kind of content do you want on it?"
 RIGHT: "What is the website meant to help visitors do?"
+
+Example — if the user says "my budget is 400 USD monthly":
+This answers both the amount (400 USD) and the pricing type (Monthly Rate), so do NOT ask about pricing type.
+WRONG: "What pricing type would you prefer — per unit, monthly, or fixed?"
+RIGHT: (move on to the next missing field, e.g.) "What does a successful outcome look like for this project?"
 
 Once all required fields are collected, set readyToDraft to true and reply with exactly: "Drafting your project request now."
 
@@ -258,6 +277,10 @@ async function callOpenRouter({ systemText, contents, temperature = 0.7 }) {
         model: MODEL,
         messages,
         temperature,
+        // Cap the completion window. Without this, OpenRouter reserves the
+        // model's full max output (65k tokens), which can exceed a low-credit
+        // account's balance and 402s. A draft/chat reply needs far less.
+        max_tokens: Number(process.env.OPENROUTER_MAX_TOKENS) || 8192,
         response_format: { type: 'json_object' },
       }),
     })

@@ -142,40 +142,16 @@ body {
   font-size: 13.5px;
 }
 
-/* Composer — bordered input + solid Send button (no wrapper box). */
+/* Composer — full-width pill with an icon send button, identical to the
+   Project Drafter. The pill itself comes from the shared .composer-pill /
+   .chat-pill-send rules; only compact sizing is tweaked here. */
 .app.embed .composer {
   padding: 12px 14px;
 }
 
-.app.embed .composer-inner {
-  background: transparent;
-  border: none;
-  padding: 0;
-  gap: 8px;
-  align-items: center;
-}
-
-.app.embed .composer-inner:focus-within {
-  box-shadow: none;
-}
-
 .app.embed .composer textarea {
-  border: 1.5px solid #e2e8f0;
-  border-radius: 9px;
-  padding: 9px 13px;
-  background: #fff;
-  font-size: 13px;
-  max-height: 90px;
-}
-
-.app.embed .composer textarea:focus {
-  border-color: var(--teal);
-}
-
-.app.embed .send {
-  border-radius: 9px;
-  padding: 10px 18px;
-  font-size: 13px;
+  font-size: 13.5px;
+  max-height: 120px;
 }
 
 .app.embed .composer-hint {
@@ -855,6 +831,78 @@ body {
 
 .btn.primary:hover {
   background: var(--teal-dark);
+}
+
+/* ---------- Sign-up (email capture) modal ---------- */
+.signup-card {
+  position: relative;
+  background: var(--bg);
+  width: 100%;
+  max-width: 440px;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 32px 28px 24px;
+  animation: pop 0.2s ease;
+  z-index: 60;
+}
+
+.signup-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.signup-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.signup-sub {
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.signup-card .inp {
+  width: 100%;
+}
+
+.signup-submit {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.signup-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+
+.signup-fine {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  margin: 14px 0 0;
+}
+
+.signup-done {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.signup-check {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fff;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
 }
 
 /* ---------- Wizard (stepped, editable preview) ---------- */
