@@ -410,7 +410,7 @@ body {
   width: 100%;
   text-align: left;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 12px;
   padding: 16px 18px;
   cursor: pointer;
@@ -482,7 +482,7 @@ body {
   gap: 10px;
   align-items: flex-end;
   background: #f5f7f9;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--radius);
   padding: 8px 8px 8px 14px;
   max-width: 860px;
@@ -648,7 +648,7 @@ body {
 
 .chip {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
@@ -669,7 +669,7 @@ body {
 
 .card {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 12px;
   padding: 18px 20px;
 }
@@ -739,7 +739,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 10px;
   padding: 12px 14px;
 }
@@ -811,7 +811,7 @@ body {
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
-  border: 1px solid transparent;
+  border: 2px solid transparent;
 }
 
 .btn.ghost {
@@ -1042,13 +1042,20 @@ body {
   margin-bottom: 8px;
 }
 
+.field-note {
+  margin: -2px 0 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
 .req {
   color: #e02424;
 }
 
 .inp {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 10px;
   padding: 11px 13px;
   font-family: inherit;
@@ -1095,7 +1102,7 @@ body {
   align-items: flex-start;
   gap: 12px;
   text-align: left;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   background: #fff;
   border-radius: 10px;
   padding: 14px 16px;
@@ -1143,7 +1150,7 @@ body {
 
 /* Tag editor */
 .tag-editor {
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 10px;
   padding: 8px 10px;
   background: #fff;
@@ -1203,7 +1210,7 @@ body {
   align-items: center;
   gap: 10px;
   background: #f7f9fa;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 8px;
   padding: 9px 12px;
   font-size: 14px;
@@ -1358,7 +1365,7 @@ button.edit-pencil {
   width: 100%;
   padding: 9px 14px;
   border-radius: 10px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   background: var(--panel);
   color: var(--ink);
   font-family: inherit;
@@ -1478,7 +1485,7 @@ button.edit-pencil {
 .draft-new-btn {
   flex-shrink: 0;
   background: transparent;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 8px;
   padding: 7px 14px;
   font-family: inherit;
@@ -1541,7 +1548,7 @@ button.edit-pencil {
   width: 100%;
   max-width: 660px;
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: 999px;
   padding: 8px 8px 8px 18px;
   gap: 10px;

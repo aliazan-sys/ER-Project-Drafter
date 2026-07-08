@@ -45,6 +45,7 @@ export const responseSchema = {
         currency: { type: 'string' },
         estimatedCostFrom: { type: 'string' },
         estimatedCostTo: { type: 'string' },
+        costEstimated: { type: 'boolean' },
         comments: { type: 'string' },
       },
     },
@@ -98,9 +99,10 @@ Guidelines:
   "Brand & Design", "Marketing").
 - skills: 3-6 concrete tools/skills (e.g. "React", "Figma", "SEO", "Copywriting").
 - scope.complexity: pick Large / Medium / Small based on the ask.
-- scope.startDate / completionDate: realistic human dates in the future relative
-  to today (e.g. "Early July 2026", "End of September 2026"). Infer sensible
-  defaults if the user didn't say.
+- scope.startDate / completionDate: realistic EXACT calendar dates in the future
+  relative to today, written as day + month + year (e.g. "14 July 2026",
+  "28 September 2026"). Never use vague phrases like "Early July" or "Mid-July" —
+  always commit to a specific day. Infer sensible defaults if the user didn't say.
 - budget.pricingType: best fit of Per Unit / Monthly Rate / Fixed Price / Not Sure.
 - budget.currency: default "GBP" unless the user implies otherwise.
 - budget.estimatedCostFrom / budget.estimatedCostTo: the lower and upper bounds
@@ -111,6 +113,9 @@ Guidelines:
   -> From 350 To 450). For small budgets where ±50 would be too wide relative to
   the amount, use a tighter spread of about ±20 (e.g. "60 USD" -> From 40 To 80).
   Never let estimatedCostFrom go below zero — clamp the lower bound at 0.
+- budget.costEstimated: set to true when the user did NOT give any price figure and
+  you had to estimate the cost range yourself from typical market rates. Set to false
+  when the range is based on a figure the user actually provided.
 - description: 2-4 rich paragraphs covering deliverables, success criteria,
   collaboration style and scope clarity (this is the meatiest field).
 - existingAssets: what the client likely already has, or "None specified" if truly none.
@@ -159,7 +164,7 @@ Rules:
   - "per month", "monthly", "a month", "/mo", "retainer" -> Monthly Rate
   - "per hour", "per day", "per unit", "per item", "each", "hourly" -> Per Unit
   - "total", "in total", "one-off", "fixed", "flat" or a lone lump sum -> Fixed Price
-  Only ask about pricing type if the amount is given with no wording that implies one.
+  Only ask about pricing type if the amount is given with no wording that implies one. When you do ask about pricing type, always list the options in parentheses, e.g. "What pricing structure works best for you (per unit, monthly rate, fixed price, or not sure)?" — a user would not otherwise know which pricing structures are available.
 - Field 5 is optional — if nothing relevant is missing, skip it.
 
 STRICT OUTPUT RULE — your reply must be ONLY the next question (or the closing line). Nothing before it, nothing after it.

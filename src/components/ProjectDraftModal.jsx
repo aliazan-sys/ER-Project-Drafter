@@ -114,7 +114,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                   placeholder="Add a category…"
                   onChange={(v) => set('categories', v)}
                 />
-                <Label style={{ marginTop: 20 }}>Specific tools or skills you're looking for</Label>
+                <Label style={{ marginTop: 20 }}>Specific tools/platforms or skills you're looking for</Label>
                 <TagEditor
                   items={form.skills}
                   placeholder="Start typing to add a skill…"
@@ -134,11 +134,11 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                 <div className="two-col">
                   <div>
                     <Label>Expected Project Start Date</Label>
-                    <input className="inp" value={form.scope.startDate} onChange={(e) => set('scope.startDate', e.target.value)} placeholder="e.g. Early July 2026" />
+                    <input className="inp" value={form.scope.startDate} onChange={(e) => set('scope.startDate', e.target.value)} placeholder="e.g. 14 July 2026" />
                   </div>
                   <div>
                     <Label>Target Completion Date</Label>
-                    <input className="inp" value={form.scope.completionDate} onChange={(e) => set('scope.completionDate', e.target.value)} placeholder="e.g. End of September 2026" />
+                    <input className="inp" value={form.scope.completionDate} onChange={(e) => set('scope.completionDate', e.target.value)} placeholder="e.g. 28 September 2026" />
                   </div>
                 </div>
               </Section>
@@ -160,6 +160,11 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                   </select>
                 </div>
                 <Label style={{ marginTop: 18 }}>Estimated Cost</Label>
+                {form.budget.costEstimated && (
+                  <p className="field-note">
+                    This is an estimate based on typical market rates for a project like this. Feel free to adjust.
+                  </p>
+                )}
                 <div className="two-col">
                   <div>
                     <input className="inp" value={form.budget.estimatedCostFrom} onChange={(e) => set('budget.estimatedCostFrom', e.target.value)} placeholder="From e.g. £4,500" />
@@ -596,6 +601,7 @@ function normalize(d = {}) {
       pricingType: '',
       estimatedCostFrom: '',
       estimatedCostTo: '',
+      costEstimated: false,
       comments: '',
       ...(d.budget || {}),
       // Only GBP/EUR/USD are supported (matches the Bubble currency Option Set).

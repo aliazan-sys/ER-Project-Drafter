@@ -4,7 +4,7 @@ import ProjectDraftModal from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 
 const GREETING =
-  "Hi! I'm your EqualReach project assistant 👋  Tell me about the project you'd like to get done — in your own words is perfectly fine. I'll ask a couple of quick questions, then draft a full project request for you."
+  "Hi! I'm your EqualReach project assistant. 👋 Tell me about your project — in your own words is perfectly fine. I'll ask a few quick questions, then draft a full project request for you!"
 
 // In the embedded chat-bubble widget the header gets a close button that tells
 // the host page (the Webflow launcher script) to collapse the iframe panel.
