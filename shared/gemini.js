@@ -7,6 +7,8 @@
 // Environment Variables.
 // ---------------------------------------------------------------------------
 
+import { TIMEZONES } from './timezones.js'
+
 // Provider selection: prefer OpenRouter when its key is present, otherwise fall
 // back to Gemini. Both read keys from process.env at call time; neither key is
 // ever sent to the browser.
@@ -76,7 +78,7 @@ export const responseSchema = {
       type: 'object',
       properties: {
         languages: { type: 'array', items: { type: 'string' } },
-        timezone: { type: 'string' },
+        timezone: { type: 'array', items: { type: 'string', enum: TIMEZONES } },
       },
     },
   },
@@ -124,7 +126,10 @@ Guidelines:
 - orgProfile: infer type (e.g. Non-profit, Startup), size, industry and location.
 - screeningQuestions: 2-3 sharp questions to vet partners.
 - levelOfExperience: Entry / Intermediate / Expert.
-- advancedTerms.languages: e.g. ["English"]. advancedTerms.timezone: e.g. "GMT (London)".
+- advancedTerms.languages: e.g. ["English"].
+- advancedTerms.timezone: a LIST of timezones, each copied verbatim from the allowed list — never invent or reword one.
+  Usually a single entry, inferred from the client's location; add more only if the project clearly spans regions.
+  If the location is unknown, use ["(UTC+00:00) Dublin, Edinburgh, Lisbon, London"].
 
 Return ONLY the structured JSON. Be specific and concrete — invent reasonable,
 professional details where the user was vague.`
@@ -133,15 +138,17 @@ professional details where the user was vague.`
 // Conversational "chatbot" mode
 // ---------------------------------------------------------------------------
 
-// What the chat turn returns: a short conversational reply, plus a flag the
-// agent flips once it has gathered enough to write a solid draft.
+// What the chat turn returns: a short conversational reply, a flag the agent
+// flips once it has gathered enough to write a solid draft, and a few tappable
+// answers the UI renders as quick-reply chips above the composer.
 export const chatResponseSchema = {
   type: 'object',
   properties: {
     reply: { type: 'string' },
     readyToDraft: { type: 'boolean' },
+    suggestions: { type: 'array', items: { type: 'string' } },
   },
-  required: ['reply', 'readyToDraft'],
+  required: ['reply', 'readyToDraft', 'suggestions'],
 }
 
 const buildChatSystemInstruction = (today) => `You are a project intake assistant for EqualReach. Today is ${today}.
@@ -187,9 +194,16 @@ This answers both the amount (400 USD) and the pricing type (Monthly Rate), so d
 WRONG: "What pricing type would you prefer — per unit, monthly, or fixed?"
 RIGHT: (move on to the next missing field, e.g.) "What does a successful outcome look like for this project?"
 
+SUGGESTIONS — alongside the question, return 2-4 plausible answers to it that the user can tap instead of typing.
+- Each is a direct answer to the question you just asked, written in the user's voice, not yours.
+- Keep them to 1-4 words so they fit on a chip: "Financial literacy", "£3,000 - £5,000", "Monthly rate".
+- Make them genuinely different from each other, and tailor them to this project — never generic filler.
+- The last one should always be an escape hatch such as "Not sure yet" when the question is one a user could reasonably not have decided on.
+- When readyToDraft is true, return an empty suggestions array.
+
 Once all required fields are collected, set readyToDraft to true and reply with exactly: "Drafting your project request now."
 
-Never write the draft itself here. Always reply as JSON { reply, readyToDraft }.`
+Never write the draft itself here. Always reply as JSON { reply, readyToDraft, suggestions }.`
 
 // Error carrying an HTTP status so callers can forward it verbatim.
 export class GeminiError extends Error {

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { submitDraftSignup } from '../lib/api.js'
+import { submitDraftSignup, loginUrlForToken } from '../lib/api.js'
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon } from './Icons.jsx'
+import { TIMEZONES } from '../../shared/timezones.js'
 
 const STEPS = [
   { id: 'title', label: 'Title' },
@@ -78,7 +80,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                 className={`step ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`}
                 onClick={() => setStep(i)}
               >
-                <span className="step-dot" />
+                <span className="step-dot">{i < step && <CheckIcon />}</span>
                 <span className="step-label">{s.label}</span>
               </li>
             ))}
@@ -89,7 +91,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
         <div className="wiz-main">
           <div className="wiz-head">
             <div className="wiz-step-count">Step {step + 1} of {STEPS.length}</div>
-            <button className="icon-btn" onClick={close} aria-label="Close">✕</button>
+            <button className="icon-btn" onClick={close} aria-label="Close"><CloseIcon /></button>
           </div>
 
           <div className="wiz-body">
@@ -133,11 +135,11 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                 />
                 <div className="two-col">
                   <div>
-                    <Label>Expected Project Start Date</Label>
+                    <Label>Expected start date</Label>
                     <input className="inp" value={form.scope.startDate} onChange={(e) => set('scope.startDate', e.target.value)} placeholder="e.g. 14 July 2026" />
                   </div>
                   <div>
-                    <Label>Target Completion Date</Label>
+                    <Label>Target completion date</Label>
                     <input className="inp" value={form.scope.completionDate} onChange={(e) => set('scope.completionDate', e.target.value)} placeholder="e.g. 28 September 2026" />
                   </div>
                 </div>
@@ -159,28 +161,29 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                     {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
                   </select>
                 </div>
-                <Label style={{ marginTop: 18 }}>Estimated Cost</Label>
                 {form.budget.costEstimated && (
-                  <p className="field-note">
+                  <p className="field-note" style={{ marginTop: 18 }}>
                     This is an estimate based on typical market rates for a project like this. Feel free to adjust.
                   </p>
                 )}
                 <div className="two-col">
                   <div>
-                    <input className="inp" value={form.budget.estimatedCostFrom} onChange={(e) => set('budget.estimatedCostFrom', e.target.value)} placeholder="From e.g. £4,500" />
+                    <Label>Estimated cost (from)</Label>
+                    <input className="inp" value={form.budget.estimatedCostFrom} onChange={(e) => set('budget.estimatedCostFrom', e.target.value)} placeholder="e.g. £4,500" />
                   </div>
                   <div>
-                    <input className="inp" value={form.budget.estimatedCostTo} onChange={(e) => set('budget.estimatedCostTo', e.target.value)} placeholder="To e.g. £5,500" />
+                    <Label>Estimated cost (to)</Label>
+                    <input className="inp" value={form.budget.estimatedCostTo} onChange={(e) => set('budget.estimatedCostTo', e.target.value)} placeholder="e.g. £5,500" />
                   </div>
                 </div>
                 <Label style={{ marginTop: 18 }}>Additional comments on pricing</Label>
-                <textarea className="inp area" value={form.budget.comments} onChange={(e) => set('budget.comments', e.target.value)} rows={3} />
+                <textarea className="inp area" value={form.budget.comments} onChange={(e) => set('budget.comments', e.target.value)} rows={3} placeholder="Anything teams should know about budget or scope…" />
               </Section>
             )}
 
             {current.id === 'description' && (
-              <Section title="Describe your project needs" sub="The more detail you provide, the better a team can tailor their proposal.">
-                <Label required>Write details for your project</Label>
+              <Section title="Describe your project" sub="The more detail you give, the better your proposals will be.">
+                <Label required>Project description</Label>
                 <textarea className="inp area tall" value={form.description} onChange={(e) => set('description', e.target.value)} rows={9} />
                 <Label style={{ marginTop: 18 }}>Existing assets, access, or documentation to share</Label>
                 <textarea className="inp area" value={form.existingAssets} onChange={(e) => set('existingAssets', e.target.value)} rows={3} placeholder="None specified" />
@@ -204,15 +207,21 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
           {/* Footer nav */}
           <div className="wiz-foot">
             {step > 0 ? (
-              <button className="btn ghost" onClick={() => setStep(step - 1)}>Back</button>
+              <button className="btn ghost" onClick={() => setStep(step - 1)}>
+                <ArrowLeftIcon /> Back
+              </button>
             ) : <span />}
             {isLast ? (
               <div className="foot-right">
-                <button className="btn ghost" onClick={close}>Cancel</button>
-                <button className="btn primary" onClick={handleSignup}>Sign up to submit the project</button>
+                <button className="btn plain" onClick={close}>Cancel</button>
+                <button className="btn primary" onClick={handleSignup}>
+                  Sign up to submit the project <ArrowRightIcon />
+                </button>
               </div>
             ) : (
-              <button className="btn primary" onClick={() => setStep(step + 1)}>Save &amp; Continue</button>
+              <button className="btn primary" onClick={() => setStep(step + 1)}>
+                Save &amp; continue <ArrowRightIcon />
+              </button>
             )}
           </div>
         </div>
@@ -228,7 +237,6 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
 // --- Email capture + submit to the EqualReach web app ---------------------
 function SignupModal({ draft, onClose }) {
   const [email, setEmail] = useState('')
-  const [organizationName, setOrganizationName] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
@@ -237,7 +245,6 @@ function SignupModal({ draft, onClose }) {
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
   const valid =
     emailValid &&
-    organizationName.trim() !== '' &&
     firstName.trim() !== '' &&
     lastName.trim() !== ''
 
@@ -253,12 +260,12 @@ function SignupModal({ draft, onClose }) {
     setStatus('submitting')
     setError('')
     try {
-      await submitDraftSignup(email.trim(), draft, {
-        organizationName: organizationName.trim(),
+      const { aiDrafterToken } = await submitDraftSignup(email.trim(), draft, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
       })
       setStatus('done')
+      window.location.href = loginUrlForToken(aiDrafterToken)
     } catch (err) {
       setStatus('error')
       setError(err.message || 'Something went wrong. Please try again.')
@@ -275,10 +282,9 @@ function SignupModal({ draft, onClose }) {
             <div className="signup-check">✓</div>
             <h2 className="signup-title">You're all set!</h2>
             <p className="signup-sub">
-              We've saved your project draft and sent a link to <strong>{email.trim()}</strong> to
-              finish setting up your account.
+              We've saved your project draft. Taking you to EqualReach to finish setting up your
+              account for <strong>{email.trim()}</strong>…
             </p>
-            <button className="btn primary signup-submit" onClick={onClose}>Done</button>
           </div>
         ) : (
           <form onSubmit={submit}>
@@ -287,18 +293,6 @@ function SignupModal({ draft, onClose }) {
               Enter your email and we'll create your EqualReach account with this project draft
               ready to go.
             </p>
-
-            <label className="flabel" htmlFor="signup-org">Organization name <span className="req">*</span></label>
-            <input
-              id="signup-org"
-              className="inp"
-              type="text"
-              value={organizationName}
-              onChange={(e) => setOrganizationName(e.target.value)}
-              placeholder="Acme Inc."
-              autoFocus
-              disabled={status === 'submitting'}
-            />
 
             <div className="two-col">
               <div>
@@ -310,6 +304,7 @@ function SignupModal({ draft, onClose }) {
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="Jane"
+                  autoFocus
                   disabled={status === 'submitting'}
                 />
               </div>
@@ -360,7 +355,7 @@ function ReviewStep({ form, set, goTo }) {
   const org = form.orgProfile
   const adv = form.advancedTerms
   return (
-    <Section title="Review" sub="Review your project details and edit anything before submitting.">
+    <Section title="Review & finishing touches" sub="Review your project details and edit anything before submitting.">
       <div className="chip-row">
         <EditChip label="Type" value={org.type} onChange={(v) => set('orgProfile.type', v)} />
         <EditChip label="Size" value={org.size} onChange={(v) => set('orgProfile.size', v)} />
@@ -427,7 +422,12 @@ function ReviewStep({ form, set, goTo }) {
           </div>
           <div>
             <Label>Preferred Timezone</Label>
-            <input className="inp" value={adv.timezone} onChange={(e) => set('advancedTerms.timezone', e.target.value)} placeholder="e.g. GMT (London)" />
+            <MultiSelect
+              items={adv.timezone}
+              options={TIMEZONES}
+              placeholder="Add a timezone…"
+              onChange={(v) => set('advancedTerms.timezone', v)}
+            />
           </div>
         </div>
       </div>
@@ -505,6 +505,35 @@ function TagEditor({ items = [], onChange, placeholder, max }) {
         />
       )}
       {max && <span className="tag-hint">{items.length}/{max} selected</span>}
+    </div>
+  )
+}
+
+// Like TagEditor, but picks come from a fixed list instead of free text — the
+// selected values render as removable chips and the dropdown resets each time.
+function MultiSelect({ items = [], options, onChange, placeholder }) {
+  const remaining = options.filter((o) => !items.includes(o))
+  return (
+    <div className="tag-editor">
+      {items.length > 0 && (
+        <div className="tags">
+          {items.map((t) => (
+            <span key={t} className="tag editable">
+              {t}
+              <button type="button" className="tag-x" onClick={() => onChange(items.filter((v) => v !== t))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <select
+        className="tag-select"
+        value=""
+        disabled={remaining.length === 0}
+        onChange={(e) => e.target.value && onChange([...items, e.target.value])}
+      >
+        <option value="">{placeholder}</option>
+        {remaining.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
     </div>
   )
 }
@@ -613,6 +642,13 @@ function normalize(d = {}) {
     orgProfile: { type: '', size: '', industry: '', location: '', ...(d.orgProfile || {}) },
     screeningQuestions: d.screeningQuestions || [],
     levelOfExperience: d.levelOfExperience || '',
-    advancedTerms: { languages: [], timezone: '', ...(d.advancedTerms || {}) },
+    advancedTerms: {
+      languages: [],
+      ...(d.advancedTerms || {}),
+      // Bubble types this as a list. Accept a bare string too (older drafts,
+      // or a model that ignored the schema) and drop anything off-list, so we
+      // never submit a value the Option Set can't represent.
+      timezone: [d.advancedTerms?.timezone].flat().filter((tz) => TIMEZONES.includes(tz)),
+    },
   }
 }

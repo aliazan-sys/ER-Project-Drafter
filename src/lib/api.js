@@ -74,11 +74,8 @@ export async function getConversation(id) {
 // Sign-up handoff: create the user and save their drafted project in the
 // EqualReach web app (Bubble backend workflow). Called directly from the
 // browser — this is an external endpoint, not our proxy.
-// Runtime endpoint on the version-test branch, where the workflow lives. No
-// /initialize — that variant only responds while the Bubble editor is in
-// "Detect data" mode and 404s ("not in initialization mode") for real runs.
 const CREATE_USER_AND_DRAFT_URL =
-  'https://admin-83903.bubbleapps.io/version-test/api/1.1/wf/webhook-create-user-and-draft-project'
+  'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf/webhook-create-user-and-draft-project'
 
 // The Bubble workflow types several params as Option Sets / Date / number, so
 // the free-text draft values must be coerced to match before sending.
@@ -142,14 +139,35 @@ function parseFuzzyDate(value) {
   return Number.isNaN(direct.getTime()) ? null : direct.toISOString()
 }
 
+// Where the user lands after signing up. The token we mint below is handed to
+// the web app so it can pick up the draft the webhook just created.
+const LOGIN_URL = 'https://app.equalreach.io/version-93726/login'
+
+export function loginUrlForToken(token) {
+  return `${LOGIN_URL}?ai_token=${encodeURIComponent(token)}`
+}
+
+// 32 hex chars of CSPRNG randomness — the shared handle between the webhook
+// payload and the login redirect.
+function generateDrafterToken() {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 // Coerce the editable form draft into the shape/types the Bubble workflow wants
 // (nested), so Option Sets, Date and number params line up.
-export function buildSubmissionPayload(email, draft, contact = {}) {
+export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToken = '') {
   const d = draft || {}
   const scope = d.scope || {}
   const budget = d.budget || {}
   return {
     email,
+    ai_drafter_token: aiDrafterToken,
+    // Every draft that reaches this endpoint came out of the AI drafter, so this
+    // is constant here. It exists so the web app can tell these apart from
+    // projects a user typed in by hand.
+    created_by_ai: true,
     organizationName: contact.organizationName || '',
     firstName: contact.firstName || '',
     lastName: contact.lastName || '',
@@ -174,16 +192,17 @@ export function buildSubmissionPayload(email, draft, contact = {}) {
 }
 
 export async function submitDraftSignup(email, draft, contact = {}) {
+  const aiDrafterToken = generateDrafterToken()
   const res = await fetch(CREATE_USER_AND_DRAFT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildSubmissionPayload(email, draft, contact)),
+    body: JSON.stringify(buildSubmissionPayload(email, draft, contact, aiDrafterToken)),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error(data.message || data.error || `Request failed (${res.status})`)
   }
-  return data
+  return { data, aiDrafterToken }
 }
 
 export async function checkHealth() {
