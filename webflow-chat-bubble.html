@@ -75,6 +75,8 @@
     //  er-chat-close → collapse the whole widget back to the bubble
     //  er-expand     → draft opened: grow the panel to full screen, hide launcher
     //  er-collapse   → draft closed: back to the floating popup
+    //  er-navigate   → sign-up submitted: navigate the WHOLE tab to the app,
+    //                  breaking out of the iframe (only to the EqualReach app).
     window.addEventListener('message', function (e) {
       if (!e || !e.data) return;
       if (e.data.type === 'er-chat-close') setOpen(false);
@@ -85,6 +87,10 @@
       if (e.data.type === 'er-collapse') {
         panel.classList.remove('fullscreen');
         dock.style.display = '';
+      }
+      if (e.data.type === 'er-navigate' && typeof e.data.url === 'string' &&
+          e.data.url.indexOf('https://app.equalreach.io/') === 0) {
+        window.location.href = e.data.url;
       }
     });
 

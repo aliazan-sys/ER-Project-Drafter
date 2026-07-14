@@ -265,7 +265,23 @@ function SignupModal({ draft, onClose }) {
         lastName: lastName.trim(),
       })
       setStatus('done')
-      window.location.href = loginUrlForToken(aiDrafterToken)
+      const url = loginUrlForToken(aiDrafterToken)
+      if (window.self !== window.top) {
+        // Running inside an iframe (the AI Drafter is embedded in the Bubble
+        // app). Navigate the WHOLE tab, not just the frame. For a normal
+        // (non-sandboxed) iframe, setting the top-level location works even
+        // cross-origin, so this is the primary path. The postMessage after it
+        // is a fallback the host page can act on if top navigation is blocked
+        // (e.g. the iframe is sandboxed).
+        try {
+          window.top.location.href = url
+        } catch {
+          /* top navigation blocked — host listener fallback below */
+        }
+        window.parent.postMessage({ type: 'er-navigate', url }, '*')
+      } else {
+        window.location.href = url
+      }
     } catch (err) {
       setStatus('error')
       setError(err.message || 'Something went wrong. Please try again.')
