@@ -9,13 +9,12 @@
 
 import { TIMEZONES } from './timezones.js'
 
-// Provider selection. The agent uses Gemini directly. OpenRouter support stays
-// in the codebase (see callOpenRouter below) but is disabled for now — to route
-// through OpenRouter again, set USE_OPENROUTER=1 with an OPENROUTER_API_KEY
-// present. Keys are read from process.env at call time; neither is ever sent to
-// the browser.
+// Provider selection: use OpenRouter when its key is present, otherwise fall
+// back to Gemini. To force Gemini even when an OpenRouter key exists, set
+// USE_OPENROUTER=0. Keys are read from process.env at call time; neither is
+// ever sent to the browser.
 const useOpenRouter = () =>
-  process.env.USE_OPENROUTER === '1' && Boolean(process.env.OPENROUTER_API_KEY)
+  process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
 
 export const MODEL = useOpenRouter()
   ? process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash'
@@ -303,8 +302,9 @@ async function callOpenRouter({ systemText, contents, temperature = 0.7 }) {
         temperature,
         // Cap the completion window. Without this, OpenRouter reserves the
         // model's full max output (65k tokens), which can exceed a low-credit
-        // account's balance and 402s. A draft/chat reply needs far less.
-        max_tokens: Number(process.env.OPENROUTER_MAX_TOKENS) || 8192,
+        // account's balance and 402s. 16k gives full drafts room to complete
+        // while staying well under that ceiling. Override with OPENROUTER_MAX_TOKENS.
+        max_tokens: Number(process.env.OPENROUTER_MAX_TOKENS) || 16384,
         response_format: { type: 'json_object' },
       }),
     })
