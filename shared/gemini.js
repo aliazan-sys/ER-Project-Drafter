@@ -16,8 +16,14 @@ import { TIMEZONES } from './timezones.js'
 const useOpenRouter = () =>
   process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
 
+// TEMPORARY PIN: force a fixed, strong OpenRouter model instead of honouring
+// OPENROUTER_MODEL. Live had OPENROUTER_MODEL=openrouter/auto, which routes each
+// request to whatever (often weaker) model OpenRouter picks — those models fail
+// to track intake state and repeat questions. Pinning to google/gemini-2.5-flash
+// makes live behave like local. To revert, restore the env-var read below and/or
+// set OPENROUTER_MODEL in the Vercel dashboard.
 export const MODEL = useOpenRouter()
-  ? process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash'
+  ? 'google/gemini-2.5-flash'
   : process.env.GEMINI_MODEL || 'gemini-2.0-flash'
 
 export const hasApiKey = () =>
