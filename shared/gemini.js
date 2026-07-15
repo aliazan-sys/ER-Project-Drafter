@@ -13,13 +13,8 @@ import { TIMEZONES } from './timezones.js'
 // back to Gemini. To force Gemini even when an OpenRouter key exists, set
 // USE_OPENROUTER=0. Keys are read from process.env at call time; neither is
 // ever sent to the browser.
-// TEMPORARY: force Gemini-direct (Google's free tier) instead of OpenRouter.
-// The shared OpenRouter account is free-tier and can't afford the paid
-// gemini-2.5-flash token reservation (16k), so live 402s on every request.
-// Gemini-direct gives the same model quality for free via GEMINI_API_KEY.
-// To restore OpenRouter, put the original body back:
-//   process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
-const useOpenRouter = () => false
+const useOpenRouter = () =>
+  process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
 
 export const MODEL = useOpenRouter()
   ? 'google/gemini-2.5-flash'
