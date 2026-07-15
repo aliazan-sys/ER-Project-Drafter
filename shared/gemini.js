@@ -13,18 +13,17 @@ import { TIMEZONES } from './timezones.js'
 // back to Gemini. To force Gemini even when an OpenRouter key exists, set
 // USE_OPENROUTER=0. Keys are read from process.env at call time; neither is
 // ever sent to the browser.
-const useOpenRouter = () =>
-  process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
+// TEMPORARY: force Gemini-direct (Google's free tier) instead of OpenRouter.
+// The shared OpenRouter account is free-tier and can't afford the paid
+// gemini-2.5-flash token reservation (16k), so live 402s on every request.
+// Gemini-direct gives the same model quality for free via GEMINI_API_KEY.
+// To restore OpenRouter, put the original body back:
+//   process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
+const useOpenRouter = () => false
 
-// TEMPORARY PIN: force a fixed, strong OpenRouter model instead of honouring
-// OPENROUTER_MODEL. Live had OPENROUTER_MODEL=openrouter/auto, which routes each
-// request to whatever (often weaker) model OpenRouter picks — those models fail
-// to track intake state and repeat questions. Pinning to google/gemini-2.5-flash
-// makes live behave like local. To revert, restore the env-var read below and/or
-// set OPENROUTER_MODEL in the Vercel dashboard.
 export const MODEL = useOpenRouter()
   ? 'google/gemini-2.5-flash'
-  : process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  : process.env.GEMINI_MODEL || 'gemini-2.5-flash'
 
 export const hasApiKey = () =>
   useOpenRouter()
