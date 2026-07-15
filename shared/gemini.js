@@ -9,17 +9,22 @@
 
 import { TIMEZONES } from './timezones.js'
 
-// Provider selection: prefer OpenRouter when its key is present, otherwise fall
-// back to Gemini. Both read keys from process.env at call time; neither key is
-// ever sent to the browser.
-const useOpenRouter = () => Boolean(process.env.OPENROUTER_API_KEY)
+// Provider selection. The agent uses Gemini directly. OpenRouter support stays
+// in the codebase (see callOpenRouter below) but is disabled for now — to route
+// through OpenRouter again, set USE_OPENROUTER=1 with an OPENROUTER_API_KEY
+// present. Keys are read from process.env at call time; neither is ever sent to
+// the browser.
+const useOpenRouter = () =>
+  process.env.USE_OPENROUTER === '1' && Boolean(process.env.OPENROUTER_API_KEY)
 
-export const MODEL = process.env.OPENROUTER_API_KEY
+export const MODEL = useOpenRouter()
   ? process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash'
   : process.env.GEMINI_MODEL || 'gemini-2.0-flash'
 
 export const hasApiKey = () =>
-  Boolean(process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY)
+  useOpenRouter()
+    ? Boolean(process.env.OPENROUTER_API_KEY)
+    : Boolean(process.env.GEMINI_API_KEY)
 
 // JSON shape we ask Gemini to return. Mirrors the 7-step EqualReach
 // "Project Request" form from the reference images.
