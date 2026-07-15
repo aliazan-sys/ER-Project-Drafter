@@ -29,9 +29,16 @@
     box-shadow:0 24px 64px rgba(0,0,0,.15),0 0 0 1px rgba(0,0,0,.05);overflow:hidden;z-index:2147482999;
     display:none;animation:erSlideUp .22s cubic-bezier(.34,1.56,.64,1)}
   #er-panel.open{display:block}
-  /* Full screen while the project draft is open (requested by the iframe). */
-  #er-panel.fullscreen{top:0;left:0;right:0;bottom:0;width:100%;max-width:100%;height:100%;max-height:100%;border-radius:0}
+  /* While the project draft is open, grow to a centered panel (NOT the whole
+     screen) and dim the host page behind it, so the site stays visible around
+     the drafter instead of being fully covered. */
+  #er-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:2147482998;display:none}
+  #er-backdrop.show{display:block}
+  #er-panel.expanded{top:50%;left:50%;transform:translate(-50%,-50%);bottom:auto;right:auto;
+    width:min(1000px,calc(100vw - 48px));height:min(800px,calc(100vh - 48px));
+    max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);border-radius:20px}
   #er-panel iframe{width:100%;height:100%;border:0;display:block}
+  @media(max-width:560px){#er-panel.expanded{width:calc(100vw - 16px);height:calc(100vh - 24px)}}
   @media(max-width:480px){#er-panel{right:8px;left:8px;width:auto;bottom:88px}}
 </style>
 
@@ -42,6 +49,7 @@
     <button id="er-launcher" aria-label="Open chat"></button>
   </div>
 </div>
+<div id="er-backdrop"></div>
 <div id="er-panel">
   <iframe id="er-frame" title="EqualReach Project Drafter" loading="lazy"></iframe>
 </div>
@@ -56,6 +64,7 @@
     var btn   = document.getElementById('er-launcher');
     var panel = document.getElementById('er-panel');
     var frame = document.getElementById('er-frame');
+    var backdrop = document.getElementById('er-backdrop');
 
     var SPARKLE = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.35 6.5L21 10.8l-6.65 2.3L12 20l-2.35-6.9L3 10.8l6.65-2.3z"/></svg>';
     var CLOSE   = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -66,6 +75,8 @@
       btn.innerHTML = open ? CLOSE : SPARKLE;
       pill.style.display = open ? 'none' : '';
       ring.style.display = open ? 'none' : '';
+      // Closing the whole widget also clears any expanded draft state.
+      if (!open) { panel.classList.remove('expanded'); backdrop.classList.remove('show'); dock.style.display = ''; }
     }
 
     btn.addEventListener('click', function () { setOpen(!panel.classList.contains('open')); });
@@ -73,7 +84,7 @@
 
     // Messages from the chat iframe:
     //  er-chat-close → collapse the whole widget back to the bubble
-    //  er-expand     → draft opened: grow the panel to full screen, hide launcher
+    //  er-expand     → draft opened: grow to a centered panel + dim host page
     //  er-collapse   → draft closed: back to the floating popup
     //  er-navigate   → sign-up submitted: navigate the WHOLE tab to the app,
     //                  breaking out of the iframe (only to the EqualReach app).
@@ -81,11 +92,13 @@
       if (!e || !e.data) return;
       if (e.data.type === 'er-chat-close') setOpen(false);
       if (e.data.type === 'er-expand') {
-        panel.classList.add('fullscreen');
+        panel.classList.add('expanded');
+        backdrop.classList.add('show');
         dock.style.display = 'none';
       }
       if (e.data.type === 'er-collapse') {
-        panel.classList.remove('fullscreen');
+        panel.classList.remove('expanded');
+        backdrop.classList.remove('show');
         dock.style.display = '';
       }
       if (e.data.type === 'er-navigate' && typeof e.data.url === 'string' &&
