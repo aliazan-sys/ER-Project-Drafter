@@ -101,9 +101,12 @@ function parseCost(value) {
   return m ? Number(m[0]) : null
 }
 
-// Turns fuzzy human dates ("Mid-July 2026", "End of September 2026") into an
-// ISO string Bubble can read as a Date. Returns null if it can't be parsed.
-function parseFuzzyDate(value) {
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Resolves fuzzy human dates ("Mid-July 2026", "End of September 2026") — and
+// machine ones ("2026-09-28") — to {y, m, d}, m being 0-based. Null if unparsable.
+// The single source of truth for reading a date: everything below builds on it.
+function fuzzyDateParts(value) {
   if (!value) return null
   const s = String(value).trim()
   const lower = s.toLowerCase()
@@ -131,12 +134,34 @@ function parseFuzzyDate(value) {
     else if (/\blate\b/.test(lower)) day = 25
     else if (/\bend\b/.test(lower)) day = new Date(y, month + 1, 0).getDate()
     else day = 15 // default / "mid"
-    return new Date(Date.UTC(y, month, day)).toISOString()
+    return { y, m: month, d: day }
   }
 
   // Fall back to native parsing for real formatted dates (ISO, "2026-09-28").
   const direct = new Date(s)
-  return Number.isNaN(direct.getTime()) ? null : direct.toISOString()
+  if (Number.isNaN(direct.getTime())) return null
+  // Read back in UTC: an ISO date string parses to UTC midnight, and local
+  // getters would roll it to the previous day west of Greenwich.
+  return { y: direct.getUTCFullYear(), m: direct.getUTCMonth(), d: direct.getUTCDate() }
+}
+
+// ISO string Bubble can read as a Date. Returns null if it can't be parsed.
+function parseFuzzyDate(value) {
+  const p = fuzzyDateParts(value)
+  return p ? new Date(Date.UTC(p.y, p.m, p.d)).toISOString() : null
+}
+
+// "yyyy-mm-dd" — the only shape <input type="date"> accepts as a value.
+export function toDateInputValue(value) {
+  const p = fuzzyDateParts(value)
+  if (!p) return ''
+  return `${p.y}-${String(p.m + 1).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`
+}
+
+// The house display format: "12 Aug, 2026".
+export function formatDisplayDate(value) {
+  const p = fuzzyDateParts(value)
+  return p ? `${p.d} ${MONTH_ABBR[p.m]}, ${p.y}` : ''
 }
 
 // Where the user lands after signing up. The token we mint below is handed to

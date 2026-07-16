@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { submitDraftSignup, loginUrlForToken } from '../lib/api.js'
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon } from './Icons.jsx'
+import { useEffect, useRef, useState } from 'react'
+import { submitDraftSignup, loginUrlForToken, toDateInputValue, formatDisplayDate } from '../lib/api.js'
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, SparkleIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
 
 const STEPS = [
@@ -19,6 +19,12 @@ const COMPLEXITY = [
   { value: 'Small', desc: 'Quick tasks, low complexity (e.g. design a logo)' },
 ]
 
+const PRIVACY_URL =
+  'https://equalreach.notion.site/EqualReach-Privacy-Policy-2025-25da08da675980cbb7bffca7683ba7e0'
+// NOTE: same URL as the privacy policy — supplied that way. Point this at the
+// real terms page once it exists.
+const TERMS_URL = PRIVACY_URL
+
 const PRICING = ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure']
 const CURRENCIES = ['GBP', 'EUR', 'USD']
 const EXPERIENCE = [
@@ -29,10 +35,30 @@ const EXPERIENCE = [
 
 // Renders the AI-generated draft as an editable, multi-step wizard that
 // mirrors the 7-step EqualReach "Project Request" form (reference images).
-export default function ProjectDraftModal({ draft, onClose, onSave }) {
+export default function ProjectDraftModal({
+  draft,
+  onClose,
+  onSave,
+  onRefine,
+  // The modal unmounts on close, so a caller that wants the step remembered
+  // holds it and seeds us back. Uncontrolled callers just start at Title.
+  initialStep = 0,
+  onStepChange,
+}) {
   const [form, setForm] = useState(() => normalize(draft))
-  const [step, setStep] = useState(0)
+  const [step, setStepState] = useState(initialStep)
   const [signupOpen, setSignupOpen] = useState(false)
+  // Only surfaced once they try to move on, so the form doesn't scold on open.
+  const [showDateError, setShowDateError] = useState(false)
+
+  const setStep = (s) => {
+    setStepState(s)
+    onStepChange?.(s)
+  }
+
+  const SCOPE_STEP = STEPS.findIndex((s) => s.id === 'scope')
+  // A timeline needs one end or the other; which one is up to them.
+  const hasDate = Boolean(form.scope.startDate || form.scope.completionDate)
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && close()
@@ -46,7 +72,30 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
     onClose()
   }
 
+  // Keep the edits made in the wizard, then hand the user back to the chat so
+  // they can describe the change instead of hunting for the right field.
+  function refine() {
+    onSave?.(form)
+    onRefine()
+  }
+
+  // Advancing past Scope requires a date. Everything else is free to skip.
+  function goNext() {
+    if (current.id === 'scope' && !hasDate) {
+      setShowDateError(true)
+      return
+    }
+    setStep(step + 1)
+  }
+
   function handleSignup() {
+    // The stepper lets them jump straight to Review, so re-check here rather
+    // than trusting that they walked through Scope.
+    if (!hasDate) {
+      setStep(SCOPE_STEP)
+      setShowDateError(true)
+      return
+    }
     // Persist edits, then open the email-capture modal. The actual submit to
     // the EqualReach web app happens from there once we have an email.
     onSave?.(form)
@@ -68,8 +117,10 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
   const isLast = step === STEPS.length - 1
 
   return (
-    <div className="modal-overlay" onClick={close}>
-      <div className="wiz" onClick={(e) => e.stopPropagation()}>
+    // Deliberately no onClick on the overlay: a stray click outside must not
+    // discard the draft. Closing goes through the X or Cancel only.
+    <div className="modal-overlay">
+      <div className="wiz">
         {/* Sidebar stepper */}
         <aside className="wiz-side">
           <div className="wiz-side-title">PROJECT REQUEST</div>
@@ -91,7 +142,15 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
         <div className="wiz-main">
           <div className="wiz-head">
             <div className="wiz-step-count">Step {step + 1} of {STEPS.length}</div>
-            <button className="icon-btn" onClick={close} aria-label="Close"><CloseIcon /></button>
+            <div className="wiz-head-actions">
+              {onRefine && (
+                <button className="btn ghost small refine-btn" onClick={refine}>
+                  <SparkleIcon size={14} />
+                  Refine with AI
+                </button>
+              )}
+              <button className="icon-btn" onClick={close} aria-label="Close"><CloseIcon /></button>
+            </div>
           </div>
 
           <div className="wiz-body">
@@ -116,7 +175,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                   placeholder="Add a category…"
                   onChange={(v) => set('categories', v)}
                 />
-                <Label style={{ marginTop: 20 }}>Specific tools/platforms or skills you're looking for</Label>
+                <Label>Specific tools/platforms or skills you're looking for</Label>
                 <TagEditor
                   items={form.skills}
                   placeholder="Start typing to add a skill…"
@@ -133,21 +192,46 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                   value={form.scope.complexity}
                   onChange={(v) => set('scope.complexity', v)}
                 />
+                {/* Label and its note are one block, so the flex gap doesn't
+                    split them apart from each other. */}
+                <div>
+                  <Label required>When do you expect this to happen?</Label>
+                  <p className="field-note">Fill in at least one — whichever you're surer about.</p>
+                </div>
                 <div className="two-col">
                   <div>
                     <Label>Expected start date</Label>
-                    <input className="inp" value={form.scope.startDate} onChange={(e) => set('scope.startDate', e.target.value)} placeholder="e.g. 14 July 2026" />
+                    <DateInput
+                      value={form.scope.startDate}
+                      invalid={showDateError && !hasDate}
+                      onChange={(v) => {
+                        set('scope.startDate', v)
+                        setShowDateError(false)
+                      }}
+                    />
                   </div>
                   <div>
                     <Label>Target completion date</Label>
-                    <input className="inp" value={form.scope.completionDate} onChange={(e) => set('scope.completionDate', e.target.value)} placeholder="e.g. 28 September 2026" />
+                    <DateInput
+                      value={form.scope.completionDate}
+                      invalid={showDateError && !hasDate}
+                      onChange={(v) => {
+                        set('scope.completionDate', v)
+                        setShowDateError(false)
+                      }}
+                    />
                   </div>
                 </div>
+                {showDateError && !hasDate && (
+                  <p className="field-error">
+                    ⚠️ Please add either a start date or a completion date to continue.
+                  </p>
+                )}
               </Section>
             )}
 
             {current.id === 'investment' && (
-              <Section title="Tell us about your budget" sub="This helps us match you to teams within your range.">
+              <Section title="Tell us about your investment" sub="This helps us match you to teams within your range.">
                 <Label required>How do you want to price this project?</Label>
                 <RadioCards
                   options={PRICING.map((p) => ({ value: p }))}
@@ -162,7 +246,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                   </select>
                 </div>
                 {form.budget.costEstimated && (
-                  <p className="field-note" style={{ marginTop: 18 }}>
+                  <p className="field-note">
                     This is an estimate based on typical market rates for a project like this. Feel free to adjust.
                   </p>
                 )}
@@ -176,7 +260,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                     <input className="inp" value={form.budget.estimatedCostTo} onChange={(e) => set('budget.estimatedCostTo', e.target.value)} placeholder="e.g. £5,500" />
                   </div>
                 </div>
-                <Label style={{ marginTop: 18 }}>Additional comments on pricing</Label>
+                <Label>Additional comments on pricing</Label>
                 <textarea className="inp area" value={form.budget.comments} onChange={(e) => set('budget.comments', e.target.value)} rows={3} placeholder="Anything teams should know about budget or scope…" />
               </Section>
             )}
@@ -185,7 +269,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
               <Section title="Describe your project" sub="The more detail you give, the better your proposals will be.">
                 <Label required>Project description</Label>
                 <textarea className="inp area tall" value={form.description} onChange={(e) => set('description', e.target.value)} rows={9} />
-                <Label style={{ marginTop: 18 }}>Existing assets, access, or documentation to share</Label>
+                <Label>Existing assets, access, or documentation to share</Label>
                 <textarea className="inp area" value={form.existingAssets} onChange={(e) => set('existingAssets', e.target.value)} rows={3} placeholder="None specified" />
               </Section>
             )}
@@ -194,7 +278,7 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
               <Section title="Describe your Project Goals" sub="Help us understand the impact you want to create.">
                 <Label required>What does a successful outcome look like for this project?</Label>
                 <textarea className="inp area" value={form.projectGoals.impactGoal} onChange={(e) => set('projectGoals.impactGoal', e.target.value)} rows={4} />
-                <Label style={{ marginTop: 18 }} required>How will completing this project help your organization in the long run?</Label>
+                <Label required>How will completing this project help your organization in the long run?</Label>
                 <textarea className="inp area" value={form.projectGoals.impactDescription} onChange={(e) => set('projectGoals.impactDescription', e.target.value)} rows={4} />
               </Section>
             )}
@@ -219,8 +303,8 @@ export default function ProjectDraftModal({ draft, onClose, onSave }) {
                 </button>
               </div>
             ) : (
-              <button className="btn primary" onClick={() => setStep(step + 1)}>
-                Save &amp; continue <ArrowRightIcon />
+              <button className="btn primary" onClick={goNext}>
+                Save and Continue <ArrowRightIcon />
               </button>
             )}
           </div>
@@ -358,7 +442,12 @@ function SignupModal({ draft, onClose }) {
             >
               {status === 'submitting' ? 'Submitting…' : 'Sign up to submit'}
             </button>
-            <p className="signup-fine">By continuing you agree to EqualReach's terms and privacy policy.</p>
+            <p className="signup-fine">
+              By continuing you agree to EqualReach's{' '}
+              <a href={TERMS_URL} target="_blank" rel="noopener noreferrer">terms and conditions</a>
+              {' '}and{' '}
+              <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.
+            </p>
           </form>
         )}
       </div>
@@ -396,12 +485,19 @@ function ReviewStep({ form, set, goTo }) {
         </div>
       </SummaryCard>
 
-      <SummaryCard title="Budget" onEdit={() => goTo(3)}>
+      <SummaryCard title="Investment" onEdit={() => goTo(3)}>
         <div className="grid-3">
           <Field icon="$" label="Currency" value={form.budget.currency} />
           <Field icon="▭" label="Payment Type" value={form.budget.pricingType} />
           <Field icon="▥" label="Estimated Cost" value={costRange(form.budget)} />
         </div>
+        {/* Optional field — an empty one is noise on the summary. */}
+        {form.budget.comments?.trim() && (
+          <div className="subfield">
+            <span className="sub-label">Additional Comments on Pricing</span>
+            <p>{form.budget.comments}</p>
+          </div>
+        )}
       </SummaryCard>
 
       <SummaryCard title="Description" onEdit={() => goTo(4)}>
@@ -421,12 +517,29 @@ function ReviewStep({ form, set, goTo }) {
 
       <div className="card">
         <div className="card-head"><h4>Screening Questions</h4></div>
+        <p className="card-note">
+          Screening Questions help you assess whether a team is the right fit for your project
+          before selecting a proposal.
+        </p>
         <ListEditor items={form.screeningQuestions} placeholder="Write your own question…" onChange={(v) => set('screeningQuestions', v)} />
       </div>
 
       <div className="card">
-        <div className="card-head"><h4>Level of Experience</h4></div>
-        <RadioCards options={EXPERIENCE} value={form.levelOfExperience} onChange={(v) => set('levelOfExperience', v)} />
+        <div className="card-head">
+          <h4>Level of Experience</h4>
+          {form.levelOfExperience && (
+            <button className="link-btn" onClick={() => set('levelOfExperience', '')}>
+              Clear
+            </button>
+          )}
+        </div>
+        <p className="card-note">Optional — leave blank if you're open to any level.</p>
+        <RadioCards
+          options={EXPERIENCE}
+          value={form.levelOfExperience}
+          onChange={(v) => set('levelOfExperience', v)}
+          clearable
+        />
       </div>
 
       <div className="card">
@@ -470,7 +583,34 @@ function Label({ children, required, style }) {
   )
 }
 
-function RadioCards({ options, value, onChange, columns = 1 }) {
+// A real date picker that still reads in the house format. The native input
+// renders per browser locale ("08/12/2026") and can't be restyled, so it sits
+// transparent on top for the picker + keyboard, with our own text underneath.
+function DateInput({ value, onChange, invalid }) {
+  const ref = useRef(null)
+  const iso = toDateInputValue(value)
+  return (
+    <div className={`date-input ${invalid ? 'invalid' : ''}`}>
+      <input
+        ref={ref}
+        type="date"
+        className="date-input-native"
+        value={iso}
+        onChange={(e) => onChange(e.target.value)}
+        onClick={() => ref.current?.showPicker?.()}
+        aria-label="Date"
+      />
+      <span className={`date-input-text ${iso ? '' : 'is-placeholder'}`}>
+        {iso ? formatDisplayDate(iso) : 'Select a date'}
+      </span>
+      <span className="date-input-icon" aria-hidden="true">▦</span>
+    </div>
+  )
+}
+
+// `clearable` marks an optional group: clicking the chosen card again unsets it.
+// Off by default so the required groups can't be emptied by a stray click.
+function RadioCards({ options, value, onChange, columns = 1, clearable = false }) {
   return (
     <div className={`radio-cards ${columns === 2 ? 'cols-2' : ''}`}>
       {options.map((o) => (
@@ -478,7 +618,8 @@ function RadioCards({ options, value, onChange, columns = 1 }) {
           type="button"
           key={o.value}
           className={`radio-card ${value === o.value ? 'selected' : ''}`}
-          onClick={() => onChange(o.value)}
+          aria-pressed={value === o.value}
+          onClick={() => onChange(clearable && value === o.value ? '' : o.value)}
         >
           <span className="radio-mark" />
           <span>
@@ -501,26 +642,33 @@ function TagEditor({ items = [], onChange, placeholder, max }) {
     setText('')
   }
   return (
-    <div className={`tag-editor ${atMax ? 'disabled' : ''}`}>
-      <div className="tags">
-        {items.map((t, i) => (
-          <span key={i} className="tag editable">
-            {t}
-            <button type="button" className="tag-x" onClick={() => onChange(items.filter((_, j) => j !== i))}>×</button>
-          </span>
-        ))}
-      </div>
-      {!atMax && (
-        <input
-          className="tag-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
-          onBlur={add}
-          placeholder={placeholder}
-        />
+    <div className="tag-editor">
+      <input
+        className="inp"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+        onBlur={add}
+        placeholder={atMax ? `Up to ${max} — remove one to add another` : placeholder}
+        disabled={atMax}
+      />
+      {items.length > 0 && (
+        <div className="tags">
+          {items.map((t, i) => (
+            <span key={i} className="tag editable">
+              <button
+                type="button"
+                className="tag-x"
+                aria-label={`Remove ${t}`}
+                onClick={() => onChange(items.filter((_, j) => j !== i))}
+              >
+                ×
+              </button>
+              {t}
+            </span>
+          ))}
+        </div>
       )}
-      {max && <span className="tag-hint">{items.length}/{max} selected</span>}
     </div>
   )
 }
@@ -531,18 +679,8 @@ function MultiSelect({ items = [], options, onChange, placeholder }) {
   const remaining = options.filter((o) => !items.includes(o))
   return (
     <div className="tag-editor">
-      {items.length > 0 && (
-        <div className="tags">
-          {items.map((t) => (
-            <span key={t} className="tag editable">
-              {t}
-              <button type="button" className="tag-x" onClick={() => onChange(items.filter((v) => v !== t))}>×</button>
-            </span>
-          ))}
-        </div>
-      )}
       <select
-        className="tag-select"
+        className="inp"
         value=""
         disabled={remaining.length === 0}
         onChange={(e) => e.target.value && onChange([...items, e.target.value])}
@@ -550,6 +688,23 @@ function MultiSelect({ items = [], options, onChange, placeholder }) {
         <option value="">{placeholder}</option>
         {remaining.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
+      {items.length > 0 && (
+        <div className="tags">
+          {items.map((t) => (
+            <span key={t} className="tag editable">
+              <button
+                type="button"
+                className="tag-x"
+                aria-label={`Remove ${t}`}
+                onClick={() => onChange(items.filter((v) => v !== t))}
+              >
+                ×
+              </button>
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -631,8 +786,10 @@ function costRange(budget) {
 }
 
 function timeline(scope) {
-  if (scope.startDate && scope.completionDate) return `${scope.startDate} → ${scope.completionDate}`
-  return scope.startDate || scope.completionDate || 'N/A'
+  const from = formatDisplayDate(scope.startDate)
+  const to = formatDisplayDate(scope.completionDate)
+  if (from && to) return `${from} → ${to}`
+  return from || to || 'N/A'
 }
 
 // Fill in any missing fields so the editor never hits undefined.
@@ -641,7 +798,14 @@ function normalize(d = {}) {
     title: d.title || '',
     categories: d.categories || [],
     skills: d.skills || [],
-    scope: { complexity: '', startDate: '', completionDate: '', ...(d.scope || {}) },
+    scope: {
+      complexity: '',
+      ...(d.scope || {}),
+      // The model writes prose dates ("Mid-August 2026"); the picker needs
+      // yyyy-mm-dd. Canonicalize once here so everything downstream agrees.
+      startDate: toDateInputValue(d.scope?.startDate),
+      completionDate: toDateInputValue(d.scope?.completionDate),
+    },
     budget: {
       pricingType: '',
       estimatedCostFrom: '',
