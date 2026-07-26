@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { submitDraftSignup, loginUrlForToken, toDateInputValue, formatDisplayDate } from '../lib/api.js'
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
+import { ORG_TYPES, ORG_SIZES } from '../../shared/orgProfile.js'
 
 const STEPS = [
   { id: 'title', label: 'Title' },
@@ -80,21 +81,8 @@ const LANGUAGES = [
   'Spanish',
   'English',
 ]
-// Organization profile pick-lists (Review step).
-const ORG_TYPES = [
-  'Startup',
-  'Small-Medium Enterprise (SME)',
-  'Enterprise',
-  'Solo Business',
-  'NGO',
-  'INGO & Government',
-]
-const ORG_SIZES = [
-  'Less than 10 employees',
-  'Small, 10-20 employees',
-  'Medium 20-50 employees',
-  'Large +50 employees',
-]
+// ORG_TYPES / ORG_SIZES are shared with the server (shared/orgProfile.js) so
+// the AI matches these exact values.
 const EXPERIENCE = [
   { value: 'Entry', desc: 'Ideal for someone starting their journey in this field' },
   { value: 'Intermediate', desc: 'Requires strong experience and proven proficiency' },
@@ -1076,12 +1064,19 @@ function EditChip({ label, value, onChange }) {
 }
 
 // Like EditChip, but the value is picked from a fixed list. Only the predefined
-// options are offered — an off-list value is never added to the dropdown.
+// options are offered — an off-list value is never added to the dropdown. When
+// nothing is selected it shows a "Select…" prompt rather than defaulting to the
+// first option, so an unanswered field never looks pre-filled.
 function SelectChip({ label, value, options, onChange }) {
   return (
     <div className="chip">
       <span className="chip-label">{label}</span>
-      <select className="chip-input chip-select" value={value || ''} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className={`chip-input chip-select ${value ? '' : 'is-empty'}`}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="" disabled hidden>Select…</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>

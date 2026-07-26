@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { TIMEZONES } from './timezones.js'
+import { ORG_TYPES, ORG_SIZES } from './orgProfile.js'
 
 // Provider selection: use OpenRouter when its key is present, otherwise fall
 // back to Gemini. To force Gemini even when an OpenRouter key exists, set
@@ -67,8 +68,10 @@ export const responseSchema = {
     orgProfile: {
       type: 'object',
       properties: {
-        type: { type: 'string' },
-        size: { type: 'string' },
+        // Type & Size must match the fixed lists exactly, or be "" when the
+        // user never stated them. Industry & Location are free text (or "").
+        type: { type: 'string', enum: ['', ...ORG_TYPES] },
+        size: { type: 'string', enum: ['', ...ORG_SIZES] },
         industry: { type: 'string' },
         location: { type: 'string' },
       },
@@ -127,7 +130,13 @@ Guidelines:
 - existingAssets: what the client likely already has, or "None specified" if truly none.
 - projectGoals.impactGoal: the successful-outcome statement in the user's voice.
 - projectGoals.impactDescription: the longer-run organisational/social impact.
-- orgProfile: infer type (e.g. Non-profit, Startup), size, industry and location.
+- orgProfile: THE ONLY EXCEPTION to the "never leave blank / invent details" rule.
+  Fill type, size, industry and location ONLY from what the user EXPLICITLY stated
+  about their organisation in the conversation. If the user did not state a field,
+  return "" (empty string) for it — NEVER guess, infer, or invent it.
+  - orgProfile.type: when stated, it MUST be exactly one of: ${ORG_TYPES.map((t) => `"${t}"`).join(', ')}. Pick the closest match; if none fits or unstated, "".
+  - orgProfile.size: when stated, it MUST be exactly one of: ${ORG_SIZES.map((s) => `"${s}"`).join(', ')}. Pick the closest match; if none fits or unstated, "".
+  - orgProfile.industry / orgProfile.location: free text copied from the user, or "" if unstated.
 - screeningQuestions: 2-3 sharp questions to vet partners.
 - levelOfExperience: Entry / Intermediate / Expert.
 - advancedTerms.languages: e.g. ["English"].
@@ -163,6 +172,7 @@ You need to collect all of the following fields before drafting:
 3. Budget — how much they plan to spend and preferred pricing type
 4. Goals — what success looks like for this project
 5. Additional information — any specific skills, tools, constraints, or assets relevant to the project
+6. Organisation profile — the organisation's type, size, industry, and location
 
 Rules:
 - Before every reply, read the full conversation and mark which fields are already covered — explicitly or implicitly.
@@ -177,6 +187,10 @@ Rules:
   - "total", "in total", "one-off", "fixed", "flat" or a lone lump sum -> Fixed Price
   Only ask about pricing type if the amount is given with no wording that implies one. When you do ask about pricing type, always list the options in parentheses, e.g. "What pricing structure works best for you (per unit, monthly rate, fixed price, or not sure)?" — a user would not otherwise know which pricing structures are available.
 - Field 5 is optional — if nothing relevant is missing, skip it.
+- Field 6 (organisation profile) is optional to answer but you SHOULD ask for it once: the organisation's type, size, industry, and location. You may ask for all four in a single short question. When you ask about type or size, list the choices in parentheses so the user knows the options:
+  - type options: ${ORG_TYPES.join(', ')}
+  - size options: ${ORG_SIZES.join(', ')}
+  If the user skips it, says "not sure", or gives only some of it, move on and draft — do NOT press. Never invent these details; whatever the user doesn't give will be left blank for them to fill in the review step.
 
 STRICT OUTPUT RULE — your reply must be ONLY the next question (or the closing line). Nothing before it, nothing after it.
 Forbidden — never output any of the following:

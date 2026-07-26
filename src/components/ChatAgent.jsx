@@ -22,6 +22,12 @@ export default function ChatAgent({ onDraftSaved } = {}) {
   const [draft, setDraft] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [error, setError] = useState('')
+  // Held out here (like the full drafter) so the wizard resumes its step and
+  // keeps its completed-step checkmarks after the modal closes and reopens.
+  const [draftStep, setDraftStep] = useState(0)
+  const [draftVisited, setDraftVisited] = useState([])
+  // Tappable answers to the question the assistant just asked.
+  const [suggestions, setSuggestions] = useState([])
 
   const scrollRef = useRef(null)
   const textareaRef = useRef(null)
@@ -55,6 +61,9 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     try {
       const { draft: result, id } = await generateDraftFromChat(convo)
       setDraft(result)
+      // Fresh draft — start the wizard at Title with a clean visited set.
+      setDraftStep(0)
+      setDraftVisited([])
       setStatus('done')
       setModalOpen(true)
       setMessages((m) => [
@@ -72,29 +81,27 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     }
   }
 
-  async function handleSend(e) {
-    e?.preventDefault()
-    const value = input.trim()
-    if (!value || busy || status === 'done') return
-
-    // The embedded bubble runs the full drafter self-contained: it chats and
-    // opens the draft modal inside the iframe (the host launcher full-screens
-    // the panel on the er-expand message), exactly like the standalone app —
-    // no redirect to a separate Webflow page.
+  // The embedded bubble runs the full drafter self-contained: it chats and
+  // opens the draft modal inside the iframe (the host launcher full-screens
+  // the panel on the er-expand message), exactly like the standalone app —
+  // no redirect to a separate Webflow page.
+  async function sendMessage(value) {
     const convo = [...messages, { role: 'user', text: value }]
     setMessages(convo)
     setInput('')
+    setSuggestions([])
     setStatus('thinking')
     setError('')
 
     try {
-      const { reply, readyToDraft } = await sendChat(convo)
+      const { reply, readyToDraft, suggestions: next } = await sendChat(convo)
       const withReply = [...convo, { role: 'bot', text: reply }]
       setMessages(withReply)
 
       if (readyToDraft) {
         await buildDraft(withReply)
       } else {
+        setSuggestions(Array.isArray(next) ? next.slice(0, 4) : [])
         setStatus('chatting')
       }
     } catch (err) {
@@ -107,6 +114,13 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     }
   }
 
+  async function handleSend(e) {
+    e?.preventDefault()
+    const value = input.trim()
+    if (!value || busy || status === 'done') return
+    await sendMessage(value)
+  }
+
   function restart() {
     setMessages([{ role: 'bot', text: GREETING }])
     setInput('')
@@ -114,6 +128,9 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     setDraft(null)
     setModalOpen(false)
     setError('')
+    setDraftStep(0)
+    setDraftVisited([])
+    setSuggestions([])
   }
 
   return (
@@ -153,6 +170,16 @@ export default function ChatAgent({ onDraftSaved } = {}) {
       </main>
 
       <footer className="composer">
+        {suggestions.length > 0 && !busy && status === 'chatting' && (
+          <div className="quick-replies">
+            {suggestions.map((s) => (
+              <button key={s} type="button" className="quick-reply" onClick={() => sendMessage(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSend} className="composer-inner composer-pill">
           <textarea
             ref={textareaRef}
@@ -197,7 +224,15 @@ export default function ChatAgent({ onDraftSaved } = {}) {
       </footer>
 
       {modalOpen && draft && (
-        <ProjectDraftModal draft={draft} onSave={setDraft} onClose={() => setModalOpen(false)} />
+        <ProjectDraftModal
+          draft={draft}
+          onSave={setDraft}
+          initialStep={draftStep}
+          onStepChange={setDraftStep}
+          initialVisited={draftVisited}
+          onVisitedChange={setDraftVisited}
+          onClose={() => setModalOpen(false)}
+        />
       )}
     </>
   )

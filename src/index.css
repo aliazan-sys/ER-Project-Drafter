@@ -1673,6 +1673,11 @@ body {
   appearance: auto;
 }
 
+/* Unfilled dropdown shows a muted "Select…" prompt, not a real value */
+.chip-select.is-empty {
+  color: var(--muted);
+}
+
 /* "Your Organization Profile Summary" heading + info badge */
 .org-head {
   display: flex;
