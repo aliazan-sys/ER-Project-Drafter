@@ -1014,10 +1014,11 @@ body {
   background: var(--panel);
   width: 100%;
   max-width: 960px;
-  /* Fill the available screen height so steps fit without the body scrolling.
-     The overlay's small padding is subtracted so it never overflows. */
+  /* Fill most of the screen height, but leave a margin top & bottom so the
+     modal centers clear of an embedding site's fixed navbar (it was hiding
+     behind it at full height). */
   height: 100%;
-  max-height: none;
+  max-height: calc(100vh - 160px);
   border-radius: 18px;
   box-shadow: var(--shadow);
   display: grid;
@@ -1755,8 +1756,8 @@ button.edit-pencil {
 @media (max-width: 760px) {
   .wiz {
     grid-template-columns: 1fr;
-    height: 92vh;
-    max-height: none;
+    height: 100%;
+    max-height: calc(100vh - 120px);
   }
   .wiz-side {
     display: none;
