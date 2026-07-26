@@ -74,10 +74,13 @@ export const responseSchema = {
     orgProfile: {
       type: 'object',
       properties: {
-        // Type & Size must match the fixed lists exactly, or be "" when the
-        // user never stated them. Industry & Location are free text (or "").
-        type: { type: 'string', enum: ['', ...ORG_TYPES] },
-        size: { type: 'string', enum: ['', ...ORG_SIZES] },
+        // Plain strings — NOT enums — because Gemini's response schema rejects
+        // an empty-string enum value, and these must be allowed to be "" when
+        // the user didn't state them. The prompt constrains Type/Size to the
+        // exact list values (or ""), and the client re-validates against the
+        // shared ORG_TYPES / ORG_SIZES lists, so nothing off-list survives.
+        type: { type: 'string' },
+        size: { type: 'string' },
         industry: { type: 'string' },
         location: { type: 'string' },
       },
@@ -138,11 +141,15 @@ Guidelines:
 - projectGoals.impactDescription: the longer-run organisational/social impact.
 - orgProfile: THE ONLY EXCEPTION to the "never leave blank / invent details" rule.
   Fill type, size, industry and location ONLY from what the user EXPLICITLY stated
-  about their organisation in the conversation. If the user did not state a field,
-  return "" (empty string) for it — NEVER guess, infer, or invent it.
-  - orgProfile.type: when stated, it MUST be exactly one of: ${ORG_TYPES.map((t) => `"${t}"`).join(', ')}. Pick the closest match; if none fits or unstated, "".
-  - orgProfile.size: when stated, it MUST be exactly one of: ${ORG_SIZES.map((s) => `"${s}"`).join(', ')}. Pick the closest match; if none fits or unstated, "".
-  - orgProfile.industry / orgProfile.location: free text copied from the user, or "" if unstated.
+  about their organisation. If the user did not clearly give a field, return ""
+  (empty string) — NEVER guess, infer, or derive it. In particular:
+    * Do NOT map a vague adjective like "small", "big", or "growing" to a size —
+      only fill size if the user gave an employee count or an explicit size band.
+    * Do NOT treat the project's topic/subject as the industry.
+    * Only fill a field if the user actually described their organisation that way.
+  - orgProfile.type: when explicitly stated, it MUST be exactly one of: ${ORG_TYPES.map((t) => `"${t}"`).join(', ')}. Pick the closest match; otherwise "".
+  - orgProfile.size: when an employee count / size band is explicitly given, it MUST be exactly one of: ${ORG_SIZES.map((s) => `"${s}"`).join(', ')}; otherwise "".
+  - orgProfile.industry / orgProfile.location: free text ONLY if the user stated it, else "".
 - screeningQuestions: 2-3 sharp questions to vet partners.
 - levelOfExperience: Entry / Intermediate / Expert.
 - advancedTerms.languages: e.g. ["English"].
@@ -193,10 +200,11 @@ Rules:
   - "total", "in total", "one-off", "fixed", "flat" or a lone lump sum -> Fixed Price
   Only ask about pricing type if the amount is given with no wording that implies one. When you do ask about pricing type, always list the options in parentheses, e.g. "What pricing structure works best for you (per unit, monthly rate, fixed price, or not sure)?" — a user would not otherwise know which pricing structures are available.
 - Field 5 is optional — if nothing relevant is missing, skip it.
-- Field 6 (organisation profile) is optional to answer but you SHOULD ask for it once: the organisation's type, size, industry, and location. You may ask for all four in a single short question. When you ask about type or size, list the choices in parentheses so the user knows the options:
+- Field 6 (organisation profile) — ANSWERING is optional, but you MUST ASK about it exactly once before you draft. This is required: never set readyToDraft until you have already asked the organisation-profile question in a previous turn. Ask for the organisation's type, size, industry, and location together in one short question, listing the type and size choices in parentheses so the user knows the options:
   - type options: ${ORG_TYPES.join(', ')}
   - size options: ${ORG_SIZES.join(', ')}
-  If the user skips it, says "not sure", or gives only some of it, move on and draft — do NOT press. Never invent these details; whatever the user doesn't give will be left blank for them to fill in the review step.
+  Example: "Lastly, tell me about your organisation — its type (${ORG_TYPES.join(', ')}), size (${ORG_SIZES.join(', ')}), industry, and location?"
+  The user may answer all, some, or none. If they skip it or say "not sure", accept that and move on to drafting — do NOT press or re-ask. Never invent these details; whatever the user does not give is left blank for them to fill in the review step.
 
 STRICT OUTPUT RULE — your reply must be ONLY the next question (or the closing line). Nothing before it, nothing after it.
 Forbidden — never output any of the following:
@@ -225,7 +233,7 @@ SUGGESTIONS — alongside the question, return 2-4 plausible answers to it that 
 - The last one should always be an escape hatch such as "Not sure yet" when the question is one a user could reasonably not have decided on.
 - When readyToDraft is true, return an empty suggestions array.
 
-Once all required fields are collected, set readyToDraft to true and reply with exactly: "Drafting your project request now."
+Only set readyToDraft to true once BOTH are true: (a) the required fields (1-4) are all covered, AND (b) you have already asked the organisation-profile question (field 6) at least once in an earlier turn. When both hold, set readyToDraft to true and reply with exactly: "Drafting your project request now."
 
 Never write the draft itself here. Always reply as JSON { reply, readyToDraft, suggestions }.`
 
