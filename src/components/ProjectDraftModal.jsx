@@ -764,17 +764,18 @@ function Label({ children, required, style }) {
 // renders per browser locale ("08/12/2026") and can't be restyled, so it sits
 // transparent on top for the picker + keyboard, with our own text underneath.
 function DateInput({ value, onChange, invalid }) {
-  const ref = useRef(null)
   const iso = toDateInputValue(value)
+  // The whole field opens the calendar: the browser's native picker indicator
+  // is stretched over the entire input via CSS. We avoid showPicker() because
+  // it's blocked inside cross-origin iframes (the Webflow embed), where only
+  // the native indicator click works.
   return (
     <div className={`date-input ${invalid ? 'invalid' : ''}`}>
       <input
-        ref={ref}
         type="date"
         className="date-input-native"
         value={iso}
         onChange={(e) => onChange(e.target.value)}
-        onClick={() => ref.current?.showPicker?.()}
         aria-label="Date"
       />
       <span className={`date-input-text ${iso ? '' : 'is-placeholder'}`}>
