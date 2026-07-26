@@ -1024,6 +1024,8 @@ body {
   display: grid;
   grid-template-columns: 230px 1fr;
   overflow: hidden;
+  /* Sit ~20px above the centered position. */
+  transform: translateY(-20px);
   animation: pop 0.2s ease;
 }
 
