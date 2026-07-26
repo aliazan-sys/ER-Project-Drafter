@@ -10,12 +10,12 @@
 import { TIMEZONES } from './timezones.js'
 import { ORG_TYPES, ORG_SIZES } from './orgProfile.js'
 
-// Provider selection: use OpenRouter when its key is present, otherwise fall
-// back to Gemini. To force Gemini even when an OpenRouter key exists, set
-// USE_OPENROUTER=0. Keys are read from process.env at call time; neither is
-// ever sent to the browser.
+// Provider selection: Gemini direct by default. Now that Gemini billing is
+// enabled we route through the Gemini API (no rate limiting). OpenRouter stays
+// available as an opt-in fallback — set USE_OPENROUTER=1 to use it. Keys are
+// read from process.env at call time; neither is ever sent to the browser.
 const useOpenRouter = () =>
-  process.env.USE_OPENROUTER !== '0' && Boolean(process.env.OPENROUTER_API_KEY)
+  process.env.USE_OPENROUTER === '1' && Boolean(process.env.OPENROUTER_API_KEY)
 
 export const MODEL = useOpenRouter()
   ? 'google/gemini-2.5-flash'
@@ -25,6 +25,12 @@ export const hasApiKey = () =>
   useOpenRouter()
     ? Boolean(process.env.OPENROUTER_API_KEY)
     : Boolean(process.env.GEMINI_API_KEY)
+
+// One output-token budget for every provider AND every environment, so drafts
+// are never truncated differently between development and live. 16k gives full
+// drafts room to complete. Override with MAX_OUTPUT_TOKENS (keep it identical
+// across environments if you do).
+const MAX_OUTPUT_TOKENS = Number(process.env.MAX_OUTPUT_TOKENS) || 16384
 
 // JSON shape we ask Gemini to return. Mirrors the 7-step EqualReach
 // "Project Request" form from the reference images.
@@ -263,6 +269,7 @@ async function callGemini({ systemText, contents, schema, temperature = 0.7 }) {
           temperature,
           responseMimeType: 'application/json',
           responseSchema: schema,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
         },
       }),
     })
@@ -314,11 +321,9 @@ async function callOpenRouter({ systemText, contents, temperature = 0.7 }) {
         model: MODEL,
         messages,
         temperature,
-        // Cap the completion window. Without this, OpenRouter reserves the
-        // model's full max output (65k tokens), which can exceed a low-credit
-        // account's balance and 402s. 16k gives full drafts room to complete
-        // while staying well under that ceiling. Override with OPENROUTER_MAX_TOKENS.
-        max_tokens: Number(process.env.OPENROUTER_MAX_TOKENS) || 16384,
+        // Same output-token budget as the Gemini path so drafts complete
+        // identically whichever provider is active.
+        max_tokens: MAX_OUTPUT_TOKENS,
         response_format: { type: 'json_object' },
       }),
     })
