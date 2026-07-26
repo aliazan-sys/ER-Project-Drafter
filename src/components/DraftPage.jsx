@@ -41,6 +41,8 @@ function ChatPanel({ onNewChat }) {
   // Lives out here so closing and reopening the wizard resumes where they left
   // off — the modal itself unmounts and would forget.
   const [draftStep, setDraftStep] = useState(0)
+  // Same reason: completed-step checkmarks must survive the modal unmounting.
+  const [draftVisited, setDraftVisited] = useState([])
   // True between "Refine with AI" and the redraft that answers it, so the next
   // message goes straight to redrafting instead of another round of questions.
   const [refining, setRefining] = useState(false)
@@ -73,6 +75,7 @@ function ChatPanel({ onNewChat }) {
       // Fresh content — the old position no longer means anything, so start at
       // Title. Every new draft (first pass or a refine) lands here.
       setDraftStep(0)
+      setDraftVisited([])
       setStatus('done')
       setModalOpen(true)
       setMessages((m) => [
@@ -288,6 +291,8 @@ function ChatPanel({ onNewChat }) {
           onRefine={refineWithAI}
           initialStep={draftStep}
           onStepChange={setDraftStep}
+          initialVisited={draftVisited}
+          onVisitedChange={setDraftVisited}
           onClose={() => setModalOpen(false)}
         />
       )}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { submitDraftSignup, loginUrlForToken, toDateInputValue, formatDisplayDate } from '../lib/api.js'
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, SparkleIcon } from './Icons.jsx'
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
 
 const STEPS = [
@@ -24,9 +24,77 @@ const PRIVACY_URL =
 // NOTE: same URL as the privacy policy — supplied that way. Point this at the
 // real terms page once it exists.
 const TERMS_URL = PRIVACY_URL
+const LOGIN_URL = 'https://app.equalreach.io/version-93726/login'
 
 const PRICING = ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure']
+// Icon per pricing type, shown on the price cards (Investment step).
+const PRICING_ICON = {
+  'Per Unit': ClockIcon,
+  'Monthly Rate': ClockIcon,
+  'Fixed Price': TagIcon,
+  'Not Sure': ClockIcon,
+}
+// Unit types shown only when pricing is "Per Unit".
+const UNIT_TYPES = ['Hour', 'Item', 'Other']
 const CURRENCIES = ['GBP', 'EUR', 'USD']
+const CURRENCY_SYMBOL = { GBP: '£', EUR: '€', USD: '$' }
+// Keep only digits and separators — cost fields are numbers, not free text.
+const numericOnly = (s) => String(s ?? '').replace(/[^\d.,]/g, '')
+// Fixed set of project categories — users pick up to 3 (see the Skills step).
+const CATEGORIES = [
+  'Writing & Translation',
+  'Web Development',
+  'Video & Audio',
+  'Software Development',
+  'Research',
+  'Programming',
+  'Marketing & Sales',
+  'Legal',
+  'Language',
+  'Game Development',
+  'Content Writing',
+  'Engineering & Architect',
+  'Education',
+  'Data Processing',
+  'Design & Creative',
+  'Customer Service',
+  'Business & Admin',
+  'App Development',
+  'AI/ML',
+]
+// Fixed list of languages for the Advanced Terms picker.
+const LANGUAGES = [
+  'Swahili',
+  'Arabic',
+  'Bengali',
+  'Italian',
+  'Vietnamese',
+  'Turkish',
+  'Japanese',
+  'Russian',
+  'Portuguese',
+  'Hindi',
+  'Mandarin',
+  'German',
+  'French',
+  'Spanish',
+  'English',
+]
+// Organization profile pick-lists (Review step).
+const ORG_TYPES = [
+  'Startup',
+  'Small-Medium Enterprise (SME)',
+  'Enterprise',
+  'Solo Business',
+  'NGO',
+  'INGO & Government',
+]
+const ORG_SIZES = [
+  'Less than 10 employees',
+  'Small, 10-20 employees',
+  'Medium 20-50 employees',
+  'Large +50 employees',
+]
 const EXPERIENCE = [
   { value: 'Entry', desc: 'Ideal for someone starting their journey in this field' },
   { value: 'Intermediate', desc: 'Requires strong experience and proven proficiency' },
@@ -39,45 +107,53 @@ export default function ProjectDraftModal({
   draft,
   onClose,
   onSave,
-  onRefine,
   // The modal unmounts on close, so a caller that wants the step remembered
   // holds it and seeds us back. Uncontrolled callers just start at Title.
   initialStep = 0,
   onStepChange,
+  // Persist which steps have been visited so their checkmarks survive the modal
+  // closing and reopening. Uncontrolled callers just start fresh each open.
+  initialVisited,
+  onVisitedChange,
 }) {
   const [form, setForm] = useState(() => normalize(draft))
   const [step, setStepState] = useState(initialStep)
   const [signupOpen, setSignupOpen] = useState(false)
   // Only surfaced once they try to move on, so the form doesn't scold on open.
   const [showDateError, setShowDateError] = useState(false)
+  // Steps the user has actually landed on. A step earns its checkmark once it
+  // has been visited AND its mandatory inputs are filled — and keeps it when
+  // they move away (forward or back), instead of only marking steps < current.
+  // Seeded from the caller so the marks survive closing/reopening the modal.
+  const [visited, setVisited] = useState(
+    () => new Set(initialVisited?.length ? initialVisited : [initialStep]),
+  )
 
   const setStep = (s) => {
     setStepState(s)
     onStepChange?.(s)
   }
 
-  const SCOPE_STEP = STEPS.findIndex((s) => s.id === 'scope')
-  // A timeline needs one end or the other; which one is up to them.
-  const hasDate = Boolean(form.scope.startDate || form.scope.completionDate)
-
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && close()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    setVisited((prev) => (prev.has(step) ? prev : new Set(prev).add(step)))
+  }, [step])
+
+  // Hand the visited set back up so a parent can persist it across reopens.
+  useEffect(() => {
+    onVisitedChange?.([...visited])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form])
+  }, [visited])
+
+  const SCOPE_STEP = STEPS.findIndex((s) => s.id === 'scope')
+  // A timeline needs one end or the other — or an "Ongoing" retainer, which has
+  // no end date by design.
+  const hasDate = Boolean(form.scope.startDate || form.scope.completionDate || form.scope.ongoing)
 
   function close() {
     onSave?.(form)
     onClose()
   }
 
-  // Keep the edits made in the wizard, then hand the user back to the chat so
-  // they can describe the change instead of hunting for the right field.
-  function refine() {
-    onSave?.(form)
-    onRefine()
-  }
 
   // Advancing past Scope requires a date. Everything else is free to skip.
   function goNext() {
@@ -125,30 +201,34 @@ export default function ProjectDraftModal({
         <aside className="wiz-side">
           <div className="wiz-side-title">PROJECT REQUEST</div>
           <ol className="stepper">
-            {STEPS.map((s, i) => (
-              <li
-                key={s.id}
-                className={`step ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`}
-                onClick={() => setStep(i)}
-              >
-                <span className="step-dot">{i < step && <CheckIcon />}</span>
-                <span className="step-label">{s.label}</span>
-              </li>
-            ))}
+            {STEPS.map((s, i) => {
+              // A step is "done" once it's been visited and its required
+              // inputs are filled — so the check persists when navigating away.
+              const done = i !== step && visited.has(i) && isStepComplete(s.id, form)
+              return (
+                <li
+                  key={s.id}
+                  className={`step ${i === step ? 'active' : ''} ${done ? 'done' : ''}`}
+                  onClick={() => setStep(i)}
+                >
+                  <span className="step-dot">{done && <CheckIcon />}</span>
+                  <span className="step-label">{s.label}</span>
+                </li>
+              )
+            })}
           </ol>
         </aside>
 
         {/* Main panel */}
         <div className="wiz-main">
           <div className="wiz-head">
-            <div className="wiz-step-count">Step {step + 1} of {STEPS.length}</div>
-            <div className="wiz-head-actions">
-              {onRefine && (
-                <button className="btn ghost small refine-btn" onClick={refine}>
-                  <SparkleIcon size={14} />
-                  Refine with AI
-                </button>
+            <div className="wiz-step-count">
+              Step {step + 1} of {STEPS.length}
+              {isStepComplete(current.id, form) && (
+                <span className="step-complete-badge">Step Completed</span>
               )}
+            </div>
+            <div className="wiz-head-actions">
               <button className="icon-btn" onClick={close} aria-label="Close"><CloseIcon /></button>
             </div>
           </div>
@@ -169,10 +249,11 @@ export default function ProjectDraftModal({
             {current.id === 'skills' && (
               <Section title="What skills and expertise does your project need?" sub="Select the categories and tools your project requires.">
                 <Label required>Choose up to 3 categories that best describe your project</Label>
-                <TagEditor
+                <SearchMultiSelect
                   items={form.categories}
+                  options={CATEGORIES}
                   max={3}
-                  placeholder="Add a category…"
+                  placeholder="Choose Category"
                   onChange={(v) => set('categories', v)}
                 />
                 <Label>Specific tools/platforms or skills you're looking for</Label>
@@ -212,14 +293,34 @@ export default function ProjectDraftModal({
                   </div>
                   <div>
                     <Label>Target completion date</Label>
-                    <DateInput
-                      value={form.scope.completionDate}
-                      invalid={showDateError && !hasDate}
-                      onChange={(v) => {
-                        set('scope.completionDate', v)
-                        setShowDateError(false)
-                      }}
-                    />
+                    {/* Monthly retainers are usually open-ended: offer "Ongoing"
+                        instead of forcing an end date. Clear it to enter one. */}
+                    {form.budget.pricingType === 'Monthly Rate' && (
+                      <label className="radio-inline">
+                        <input
+                          type="radio"
+                          checked={!!form.scope.ongoing}
+                          onClick={() => {
+                            const next = !form.scope.ongoing
+                            set('scope.ongoing', next)
+                            if (next) set('scope.completionDate', '')
+                            setShowDateError(false)
+                          }}
+                          onChange={() => {}}
+                        />
+                        <span>Ongoing</span>
+                      </label>
+                    )}
+                    {!form.scope.ongoing && (
+                      <DateInput
+                        value={form.scope.completionDate}
+                        invalid={showDateError && !hasDate}
+                        onChange={(v) => {
+                          set('scope.completionDate', v)
+                          setShowDateError(false)
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
                 {showDateError && !hasDate && (
@@ -230,40 +331,91 @@ export default function ProjectDraftModal({
               </Section>
             )}
 
-            {current.id === 'investment' && (
-              <Section title="Tell us about your investment" sub="This helps us match you to teams within your range.">
-                <Label required>How do you want to price this project?</Label>
-                <RadioCards
-                  options={PRICING.map((p) => ({ value: p }))}
-                  value={form.budget.pricingType}
-                  onChange={(v) => set('budget.pricingType', v)}
-                  columns={2}
-                />
-                <div>
-                  <Label>Currency</Label>
-                  <select className="inp" value={form.budget.currency} onChange={(e) => set('budget.currency', e.target.value)}>
-                    {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                {form.budget.costEstimated && (
-                  <p className="field-note">
-                    This is an estimate based on typical market rates for a project like this. Feel free to adjust.
-                  </p>
-                )}
-                <div className="two-col">
+            {current.id === 'investment' && (() => {
+              const b = form.budget
+              const isPerUnit = b.pricingType === 'Per Unit'
+              const isMonthly = b.pricingType === 'Monthly Rate'
+              const isFixed = b.pricingType === 'Fixed Price'
+              // "Not Sure" (and no selection) hide the range entirely.
+              const showRange = isPerUnit || isMonthly || isFixed
+              const rangeSuffix = isMonthly
+                ? '/month'
+                : isPerUnit
+                  ? `/${(b.unitType || '').toLowerCase()}`
+                  : ''
+              const noRange = !b.estimatedCostFrom && !b.estimatedCostTo
+              const showUnitError = isPerUnit && !b.unitType
+              const showRangeError = showRange && noRange && (isMonthly || isFixed || (isPerUnit && b.unitType))
+              return (
+                <Section title="Tell us about your budget" sub="This will help us match you to the teams within your range">
+                  <Label required>How do you want to price this project?</Label>
+                  <RadioCards
+                    options={PRICING.map((p) => {
+                      const Icon = PRICING_ICON[p]
+                      return { value: p, icon: <Icon /> }
+                    })}
+                    value={b.pricingType}
+                    onChange={(v) => set('budget.pricingType', v)}
+                    columns={2}
+                  />
+
                   <div>
-                    <Label>Estimated cost (from)</Label>
-                    <input className="inp" value={form.budget.estimatedCostFrom} onChange={(e) => set('budget.estimatedCostFrom', e.target.value)} placeholder="e.g. £4,500" />
+                    <Label>Select a currency</Label>
+                    <select className="inp" value={b.currency} onChange={(e) => set('budget.currency', e.target.value)}>
+                      {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+                    </select>
                   </div>
-                  <div>
-                    <Label>Estimated cost (to)</Label>
-                    <input className="inp" value={form.budget.estimatedCostTo} onChange={(e) => set('budget.estimatedCostTo', e.target.value)} placeholder="e.g. £5,500" />
-                  </div>
-                </div>
-                <Label>Additional comments on pricing</Label>
-                <textarea className="inp area" value={form.budget.comments} onChange={(e) => set('budget.comments', e.target.value)} rows={3} placeholder="Anything teams should know about budget or scope…" />
-              </Section>
-            )}
+
+                  {/* Per Unit: pick what a "unit" means before the range. */}
+                  {isPerUnit && (
+                    <div>
+                      <Label required>Per unit setting (unit type):</Label>
+                      <RadioCards
+                        options={UNIT_TYPES.map((u) => ({ value: u }))}
+                        value={b.unitType}
+                        onChange={(v) => set('budget.unitType', v)}
+                        columns={3}
+                      />
+                      {showUnitError && <p className="field-required">Project unit type is required</p>}
+                    </div>
+                  )}
+
+                  {/* Range shown for every priced option except "Not Sure". */}
+                  {showRange && (
+                    <div>
+                      <Label required>Investment Range?</Label>
+                      <p className="field-note">Enter at least one value (From or To)</p>
+                      <div className="two-col">
+                        <div>
+                          <Label>From</Label>
+                          <RangeInput
+                            value={b.estimatedCostFrom}
+                            onChange={(v) => set('budget.estimatedCostFrom', v)}
+                            placeholder={isPerUnit ? '15' : '500'}
+                            suffix={rangeSuffix}
+                          />
+                        </div>
+                        <div>
+                          <Label>To</Label>
+                          <RangeInput
+                            value={b.estimatedCostTo}
+                            onChange={(v) => set('budget.estimatedCostTo', v)}
+                            placeholder={isPerUnit ? '35' : '800'}
+                            suffix={rangeSuffix}
+                          />
+                        </div>
+                      </div>
+                      {showRangeError && (
+                        <p className="field-required">Project rate range is required (enter at least one value)</p>
+                      )}
+                    </div>
+                  )}
+
+                  <Label>Do you have any additional comments on pricing?</Label>
+                  <textarea className="inp area" value={b.comments} onChange={(e) => set('budget.comments', e.target.value)} rows={3} placeholder="Anything teams should know about budget or scope…" />
+                </Section>
+              )
+            })()}
 
             {current.id === 'description' && (
               <Section title="Describe your project" sub="The more detail you give, the better your proposals will be.">
@@ -332,12 +484,6 @@ function SignupModal({ draft, onClose }) {
     firstName.trim() !== '' &&
     lastName.trim() !== ''
 
-  useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && status !== 'submitting' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [status, onClose])
-
   async function submit(e) {
     e?.preventDefault()
     if (!valid || status === 'submitting') return
@@ -373,8 +519,10 @@ function SignupModal({ draft, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={() => status !== 'submitting' && onClose()}>
-      <div className="signup-card" onClick={(e) => e.stopPropagation()}>
+    // No onClick on the overlay: a stray click outside must not discard the
+    // form. Closing goes through the X (or Cancel) only.
+    <div className="modal-overlay">
+      <div className="signup-card">
         <button className="icon-btn signup-close" onClick={onClose} aria-label="Close" disabled={status === 'submitting'}>✕</button>
 
         {status === 'done' ? (
@@ -448,6 +596,10 @@ function SignupModal({ draft, onClose }) {
               {' '}and{' '}
               <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.
             </p>
+            <p className="signup-fine signup-login">
+              Already have an account?{' '}
+              <a href={LOGIN_URL} target="_blank" rel="noopener noreferrer">Log in here</a>.
+            </p>
           </form>
         )}
       </div>
@@ -460,10 +612,19 @@ function ReviewStep({ form, set, goTo }) {
   const org = form.orgProfile
   const adv = form.advancedTerms
   return (
-    <Section title="Review & finishing touches" sub="Review your project details and edit anything before submitting.">
+    <Section title="Review" sub="Review your project details and submit when you're ready.">
+      <div className="org-head">
+        <h4>Your Organization Profile Summary</h4>
+        <span className="info-dot" tabIndex={0}>
+          i
+          <span className="info-tip" role="tooltip">
+            The anonymized overview of your organization will be shared in the project request
+          </span>
+        </span>
+      </div>
       <div className="chip-row">
-        <EditChip label="Type" value={org.type} onChange={(v) => set('orgProfile.type', v)} />
-        <EditChip label="Size" value={org.size} onChange={(v) => set('orgProfile.size', v)} />
+        <SelectChip label="Type" value={org.type} options={ORG_TYPES} onChange={(v) => set('orgProfile.type', v)} />
+        <SelectChip label="Size" value={org.size} options={ORG_SIZES} onChange={(v) => set('orgProfile.size', v)} />
         <EditChip label="Industry" value={org.industry} onChange={(v) => set('orgProfile.industry', v)} />
         <EditChip label="Location" value={org.location} onChange={(v) => set('orgProfile.location', v)} />
       </div>
@@ -472,33 +633,41 @@ function ReviewStep({ form, set, goTo }) {
         <p className="strong">{form.title || '—'}</p>
       </SummaryCard>
 
-      <SummaryCard title="Skills & Category" onEdit={() => goTo(1)}>
-        <TagList items={form.categories} empty="No categories" />
-        <div style={{ height: 8 }} />
-        <TagList items={form.skills} empty="No skills" />
-      </SummaryCard>
+      {/* Category, Skills, Scope and Budget share one card, each as its own
+          row with its own edit pencil (matches the platform review layout). */}
+      <section className="card summary-group">
+        <SummaryRow title="Category" onEdit={() => goTo(1)}>
+          {form.categories?.length
+            ? <p>{form.categories.join(', ')}</p>
+            : <p className="muted">No categories</p>}
+        </SummaryRow>
 
-      <SummaryCard title="Scope" onEdit={() => goTo(2)}>
-        <div className="grid-2">
-          <Field icon="▦" label="Project Size" value={form.scope.complexity} />
-          <Field icon="▤" label="Timeline" value={timeline(form.scope)} />
-        </div>
-      </SummaryCard>
+        <SummaryRow title="Skills" onEdit={() => goTo(1)}>
+          <TagList items={form.skills} empty="No skills" />
+        </SummaryRow>
 
-      <SummaryCard title="Investment" onEdit={() => goTo(3)}>
-        <div className="grid-3">
-          <Field icon="$" label="Currency" value={form.budget.currency} />
-          <Field icon="▭" label="Payment Type" value={form.budget.pricingType} />
-          <Field icon="▥" label="Estimated Cost" value={costRange(form.budget)} />
-        </div>
-        {/* Optional field — an empty one is noise on the summary. */}
-        {form.budget.comments?.trim() && (
-          <div className="subfield">
-            <span className="sub-label">Additional Comments on Pricing</span>
-            <p>{form.budget.comments}</p>
+        <SummaryRow title="Scope" onEdit={() => goTo(2)}>
+          <div className="grid-2">
+            <Field icon={<FrameIcon />} label="Project Size" value={form.scope.complexity} />
+            <Field icon={<CalendarIcon />} label="Timeline" value={timeline(form.scope)} />
           </div>
-        )}
-      </SummaryCard>
+        </SummaryRow>
+
+        <SummaryRow title="Budget" onEdit={() => goTo(3)}>
+          <div className="grid-3">
+            <Field icon={<DollarIcon />} label="Currency" value={form.budget.currency} />
+            <Field icon={<CardIcon />} label="Payment Type" value={form.budget.pricingType} />
+            <Field icon={<CalculatorIcon />} label="Estimated Cost" value={costRange(form.budget)} />
+          </div>
+          {/* Optional field — an empty one is noise on the summary. */}
+          {form.budget.comments?.trim() && (
+            <div className="subfield">
+              <span className="sub-label">Additional Comments on Pricing</span>
+              <p>{form.budget.comments}</p>
+            </div>
+          )}
+        </SummaryRow>
+      </section>
 
       <SummaryCard title="Description" onEdit={() => goTo(4)}>
         <Paragraphs text={form.description} />
@@ -516,24 +685,26 @@ function ReviewStep({ form, set, goTo }) {
       <h3 className="section-title">Additional Information</h3>
 
       <div className="card">
-        <div className="card-head"><h4>Screening Questions</h4></div>
-        <p className="card-note">
-          Screening Questions help you assess whether a team is the right fit for your project
-          before selecting a proposal.
-        </p>
-        <ListEditor items={form.screeningQuestions} placeholder="Write your own question…" onChange={(v) => set('screeningQuestions', v)} />
+        <div className="card-head"><h4>Screening Questions <span className="opt">(optional)</span></h4></div>
+        <p className="card-note">Narrow down your team selection</p>
+        <ScreeningQuestions
+          items={form.screeningQuestions}
+          suggestions={form.suggestedQuestions}
+          onChange={(v) => set('screeningQuestions', v)}
+        />
       </div>
 
       <div className="card">
         <div className="card-head">
-          <h4>Level of Experience</h4>
+          <h4>Level of Experience <span className="opt">(optional)</span></h4>
           {form.levelOfExperience && (
             <button className="link-btn" onClick={() => set('levelOfExperience', '')}>
               Clear
             </button>
           )}
         </div>
-        <p className="card-note">Optional — leave blank if you're open to any level.</p>
+        <p className="card-note">Narrow down your team selection</p>
+        <p className="field-note">Select the level of experience your project requires.</p>
         <RadioCards
           options={EXPERIENCE}
           value={form.levelOfExperience}
@@ -543,18 +714,24 @@ function ReviewStep({ form, set, goTo }) {
       </div>
 
       <div className="card">
-        <div className="card-head"><h4>Advanced Terms</h4></div>
-        <div className="two-col">
+        <div className="card-head"><h4>Advanced terms <span className="opt">(optional)</span></h4></div>
+        <p className="card-note">Narrow down your team selection</p>
+        <div className="stack">
           <div>
             <Label>Language</Label>
-            <TagEditor items={adv.languages} placeholder="Add a language…" onChange={(v) => set('advancedTerms.languages', v)} />
+            <SearchMultiSelect
+              items={adv.languages}
+              options={LANGUAGES}
+              placeholder="Choose Languages"
+              onChange={(v) => set('advancedTerms.languages', v)}
+            />
           </div>
           <div>
-            <Label>Preferred Timezone</Label>
-            <MultiSelect
+            <Label>Timezone you prefer for working</Label>
+            <SearchMultiSelect
               items={adv.timezone}
               options={TIMEZONES}
-              placeholder="Add a timezone…"
+              placeholder="Choose Timezones"
               onChange={(v) => set('advancedTerms.timezone', v)}
             />
           </div>
@@ -612,7 +789,7 @@ function DateInput({ value, onChange, invalid }) {
 // Off by default so the required groups can't be emptied by a stray click.
 function RadioCards({ options, value, onChange, columns = 1, clearable = false }) {
   return (
-    <div className={`radio-cards ${columns === 2 ? 'cols-2' : ''}`}>
+    <div className={`radio-cards ${columns === 2 ? 'cols-2' : ''} ${columns === 3 ? 'cols-3' : ''}`}>
       {options.map((o) => (
         <button
           type="button"
@@ -622,12 +799,30 @@ function RadioCards({ options, value, onChange, columns = 1, clearable = false }
           onClick={() => onChange(clearable && value === o.value ? '' : o.value)}
         >
           <span className="radio-mark" />
+          {o.icon && <span className="radio-icon">{o.icon}</span>}
           <span>
             <span className="radio-title">{o.value}</span>
             {o.desc && <span className="radio-desc">{o.desc}</span>}
           </span>
         </button>
       ))}
+    </div>
+  )
+}
+
+// Numeric range field with a unit suffix outside the box (e.g. "/month").
+function RangeInput({ value, onChange, placeholder, suffix }) {
+  return (
+    <div className="range-input">
+      <input
+        className="inp"
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(numericOnly(e.target.value))}
+        placeholder={placeholder}
+      />
+      {suffix && <span className="range-suffix">{suffix}</span>}
     </div>
   )
 }
@@ -673,20 +868,105 @@ function TagEditor({ items = [], onChange, placeholder, max }) {
   )
 }
 
+// A searchable multi-select: click to open the option list, type to filter
+// (the typed text stays visible), click options to add them as removable chips.
+// Restricted to `options` and capped at `max`.
+function SearchMultiSelect({ items = [], options, onChange, placeholder, max }) {
+  const [text, setText] = useState('')
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef(null)
+  const atMax = max && items.length >= max
+  const query = text.trim().toLowerCase()
+  const filtered = options.filter(
+    (o) => !items.includes(o) && o.toLowerCase().includes(query),
+  )
+
+  // Close the menu when clicking outside the widget.
+  useEffect(() => {
+    function onDoc(e) {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  function pick(o) {
+    if (atMax || items.includes(o)) return
+    onChange([...items, o])
+    setText('')
+    setOpen(true) // stay open so more can be added, up to max
+  }
+
+  return (
+    <div className="tag-editor">
+      <div className="ms" ref={boxRef}>
+        <input
+          className="inp"
+          value={text}
+          disabled={atMax}
+          placeholder={atMax ? `Up to ${max} — remove one to add another` : placeholder}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => { setText(e.target.value); setOpen(true) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && filtered.length) { e.preventDefault(); pick(filtered[0]) }
+            else if (e.key === 'Escape') setOpen(false)
+          }}
+        />
+        {open && !atMax && filtered.length > 0 && (
+          <ul className="ms-menu">
+            {filtered.map((o) => (
+              <li key={o}>
+                <button
+                  type="button"
+                  className="ms-option"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(o)}
+                >
+                  {o}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {items.length > 0 && (
+        <div className="tags">
+          {items.map((t) => (
+            <span key={t} className="tag editable">
+              <button
+                type="button"
+                className="tag-x"
+                aria-label={`Remove ${t}`}
+                onClick={() => onChange(items.filter((v) => v !== t))}
+              >
+                ×
+              </button>
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Like TagEditor, but picks come from a fixed list instead of free text — the
 // selected values render as removable chips and the dropdown resets each time.
-function MultiSelect({ items = [], options, onChange, placeholder }) {
+function MultiSelect({ items = [], options, onChange, placeholder, max }) {
   const remaining = options.filter((o) => !items.includes(o))
+  const atMax = max && items.length >= max
   return (
     <div className="tag-editor">
       <select
         className="inp"
         value=""
-        disabled={remaining.length === 0}
-        onChange={(e) => e.target.value && onChange([...items, e.target.value])}
+        disabled={atMax || remaining.length === 0}
+        onChange={(e) => e.target.value && !atMax && onChange([...items, e.target.value])}
       >
-        <option value="">{placeholder}</option>
-        {remaining.map((o) => <option key={o} value={o}>{o}</option>)}
+        <option value="">
+          {atMax ? `Up to ${max} — remove one to add another` : placeholder}
+        </option>
+        {!atMax && remaining.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
       {items.length > 0 && (
         <div className="tags">
@@ -709,28 +989,71 @@ function MultiSelect({ items = [], options, onChange, placeholder }) {
   )
 }
 
-function ListEditor({ items = [], onChange, placeholder }) {
+// Screening questions: the AI's questions are shown as SUGGESTIONS the user
+// opts into with "+", and they can type their own. Added questions show above
+// the suggestions with an "×" to remove; a removed suggestion returns to the
+// suggestion list.
+function ScreeningQuestions({ items = [], suggestions = [], onChange }) {
   const [text, setText] = useState('')
-  function add() {
-    const v = text.trim()
-    if (!v) return
+  const remaining = suggestions.filter((q) => !items.includes(q))
+  function add(q) {
+    const v = (q ?? text).trim()
+    if (!v || items.includes(v)) return
     onChange([...items, v])
-    setText('')
+    if (q == null) setText('')
   }
   return (
     <div>
-      <ul className="list-edit">
-        {items.map((q, i) => (
-          <li key={i}>
-            <span>{q}</span>
-            <button type="button" className="tag-x" onClick={() => onChange(items.filter((_, j) => j !== i))}>×</button>
-          </li>
-        ))}
-      </ul>
-      <div className="list-add">
-        <input className="inp" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} placeholder={placeholder} />
-        <button type="button" className="btn ghost small" onClick={add}>+ Add</button>
+      <div className="sq-add">
+        <input
+          className="inp"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder="Write your own questions"
+        />
+        <button type="button" className="btn ghost small sq-add-btn" onClick={() => add()}>+ Add</button>
       </div>
+
+      {items.length > 0 && (
+        <ul className="sq-added">
+          {items.map((q, i) => (
+            <li key={i}>
+              <button
+                type="button"
+                className="sq-remove"
+                aria-label={`Remove ${q}`}
+                onClick={() => onChange(items.filter((_, j) => j !== i))}
+              >
+                ×
+              </button>
+              <span>{q}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {remaining.length > 0 && (
+        <div className="sq-suggest">
+          <div className="sq-suggest-title">Suggested question</div>
+          <p className="sq-suggest-sub">You might want to ask these questions</p>
+          <ul className="sq-suggest-list">
+            {remaining.map((q) => (
+              <li key={q}>
+                <button
+                  type="button"
+                  className="sq-plus"
+                  aria-label={`Add ${q}`}
+                  onClick={() => add(q)}
+                >
+                  +
+                </button>
+                <span>{q}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
@@ -744,15 +1067,42 @@ function EditChip({ label, value, onChange }) {
   )
 }
 
+// Like EditChip, but the value is picked from a fixed list. Only the predefined
+// options are offered — an off-list value is never added to the dropdown.
+function SelectChip({ label, value, options, onChange }) {
+  return (
+    <div className="chip">
+      <span className="chip-label">{label}</span>
+      <select className="chip-input chip-select" value={value || ''} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  )
+}
+
 function SummaryCard({ title, onEdit, children }) {
   return (
     <section className="card">
       <div className="card-head">
         <h4>{title}</h4>
-        <button className="edit-pencil" onClick={onEdit} title="Edit this section">✎</button>
+        <button className="edit-pencil" onClick={onEdit} title="Edit this section"><PencilIcon /></button>
       </div>
       {children}
     </section>
+  )
+}
+
+// One section inside the grouped summary card: a title with its own edit
+// pencil, then the content below it.
+function SummaryRow({ title, onEdit, children }) {
+  return (
+    <div className="sum-row">
+      <div className="sum-row-head">
+        <h4>{title}</h4>
+        <button className="edit-pencil" onClick={onEdit} title="Edit this section"><PencilIcon /></button>
+      </div>
+      {children}
+    </div>
   )
 }
 
@@ -778,16 +1128,51 @@ function Paragraphs({ text }) {
   return String(text).split(/\n{2,}|\n/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)
 }
 
+// Whether a step's mandatory inputs are all filled. Mirrors the `required`
+// fields in each step's markup — keep the two in sync.
+function isStepComplete(id, form) {
+  switch (id) {
+    case 'title':
+      return Boolean(form.title?.trim())
+    case 'skills':
+      return (form.categories?.length ?? 0) > 0
+    case 'scope':
+      return Boolean(form.scope?.complexity) &&
+        Boolean(form.scope?.startDate || form.scope?.completionDate || form.scope?.ongoing)
+    case 'investment': {
+      const b = form.budget || {}
+      if (!b.pricingType) return false
+      if (b.pricingType === 'Not Sure') return true
+      const hasRange = Boolean(b.estimatedCostFrom || b.estimatedCostTo)
+      // Per Unit also needs a unit type; the rest just need a range value.
+      if (b.pricingType === 'Per Unit') return Boolean(b.unitType) && hasRange
+      return hasRange
+    }
+    case 'description':
+      return Boolean(form.description?.trim())
+    case 'goals':
+      return Boolean(form.projectGoals?.impactGoal?.trim()) &&
+        Boolean(form.projectGoals?.impactDescription?.trim())
+    case 'review':
+      return true
+    default:
+      return false
+  }
+}
+
 function costRange(budget) {
-  const from = budget.estimatedCostFrom
-  const to = budget.estimatedCostTo
-  if (from && to) return `${from} – ${to}`
-  return from || to || 'N/A'
+  const sym = CURRENCY_SYMBOL[budget.currency] || ''
+  const from = numericOnly(budget.estimatedCostFrom)
+  const to = numericOnly(budget.estimatedCostTo)
+  if (from && to) return `${sym}${from} – ${sym}${to}`
+  if (from) return `${sym}${from}`
+  if (to) return `${sym}${to}`
+  return 'N/A'
 }
 
 function timeline(scope) {
   const from = formatDisplayDate(scope.startDate)
-  const to = formatDisplayDate(scope.completionDate)
+  const to = scope.ongoing ? 'Ongoing' : formatDisplayDate(scope.completionDate)
   if (from && to) return `${from} → ${to}`
   return from || to || 'N/A'
 }
@@ -804,30 +1189,49 @@ function normalize(d = {}) {
       // The model writes prose dates ("Mid-August 2026"); the picker needs
       // yyyy-mm-dd. Canonicalize once here so everything downstream agrees.
       startDate: toDateInputValue(d.scope?.startDate),
-      completionDate: toDateInputValue(d.scope?.completionDate),
+      // Monthly retainers default to "Ongoing" (no end date). We don't keep an
+      // AI-generated completion date for them — only a date the user set later
+      // (saved as ongoing: false) survives.
+      ongoing: d.scope?.ongoing ?? (d.budget?.pricingType === 'Monthly Rate'),
+      completionDate: (d.scope?.ongoing ?? (d.budget?.pricingType === 'Monthly Rate'))
+        ? ''
+        : toDateInputValue(d.scope?.completionDate),
     },
     budget: {
       pricingType: '',
-      estimatedCostFrom: '',
-      estimatedCostTo: '',
+      unitType: '',
       costEstimated: false,
       comments: '',
       ...(d.budget || {}),
       // Only GBP/EUR/USD are supported (matches the Bubble currency Option Set).
       currency: CURRENCIES.includes(d.budget?.currency) ? d.budget.currency : 'GBP',
+      // The symbol is rendered by the field itself, so store just the number.
+      estimatedCostFrom: numericOnly(d.budget?.estimatedCostFrom),
+      estimatedCostTo: numericOnly(d.budget?.estimatedCostTo),
     },
     description: d.description || '',
     existingAssets: d.existingAssets || '',
     projectGoals: { impactGoal: '', impactDescription: '', ...(d.projectGoals || {}) },
-    orgProfile: { type: '', size: '', industry: '', location: '', ...(d.orgProfile || {}) },
-    screeningQuestions: d.screeningQuestions || [],
+    orgProfile: {
+      industry: '', location: '',
+      ...(d.orgProfile || {}),
+      // Type & Size are fixed dropdowns — drop any AI value that's off-list.
+      type: ORG_TYPES.includes(d.orgProfile?.type) ? d.orgProfile.type : '',
+      size: ORG_SIZES.includes(d.orgProfile?.size) ? d.orgProfile.size : '',
+    },
+    // The AI's questions are SUGGESTIONS the user opts into — they don't get
+    // added automatically. On a fresh draft `screeningQuestions` starts empty
+    // and the AI list seeds `suggestedQuestions`; a reopened draft (which
+    // already carries `suggestedQuestions`) keeps whatever the user added.
+    suggestedQuestions: d.suggestedQuestions ?? (d.screeningQuestions || []),
+    screeningQuestions: d.suggestedQuestions !== undefined ? (d.screeningQuestions || []) : [],
     levelOfExperience: d.levelOfExperience || '',
     advancedTerms: {
-      languages: [],
       ...(d.advancedTerms || {}),
-      // Bubble types this as a list. Accept a bare string too (older drafts,
+      // Bubble types these as lists. Accept a bare string too (older drafts,
       // or a model that ignored the schema) and drop anything off-list, so we
-      // never submit a value the Option Set can't represent.
+      // only ever keep values from the predefined Option Sets.
+      languages: [d.advancedTerms?.languages].flat().filter((l) => LANGUAGES.includes(l)),
       timezone: [d.advancedTerms?.timezone].flat().filter((tz) => TIMEZONES.includes(tz)),
     },
   }

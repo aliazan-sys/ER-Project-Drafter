@@ -15,6 +15,10 @@ export default function GuidedDrafter() {
   const [status, setStatus] = useState('chatting') // chatting | drafting | done | error
   const [draft, setDraft] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
+  // Held out here so the preview modal resumes its position and keeps its
+  // completed-step checkmarks after it's closed and reopened.
+  const [modalStep, setModalStep] = useState(0)
+  const [modalVisited, setModalVisited] = useState([])
   const [error, setError] = useState('')
 
   const scrollRef = useRef(null)
@@ -57,6 +61,8 @@ export default function GuidedDrafter() {
     try {
       const result = await generateDraft(nextAnswers)
       setDraft(result)
+      setModalStep(0)
+      setModalVisited([])
       setStatus('done')
       setModalOpen(true)
       setMessages((m) => [
@@ -149,7 +155,15 @@ export default function GuidedDrafter() {
       </footer>
 
       {modalOpen && draft && (
-        <ProjectDraftModal draft={draft} onSave={setDraft} onClose={() => setModalOpen(false)} />
+        <ProjectDraftModal
+          draft={draft}
+          onSave={setDraft}
+          initialStep={modalStep}
+          onStepChange={setModalStep}
+          initialVisited={modalVisited}
+          onVisitedChange={setModalVisited}
+          onClose={() => setModalOpen(false)}
+        />
       )}
     </>
   )
