@@ -134,8 +134,15 @@ export default function ProjectDraftModal({
     onStepChange?.(s)
   }
 
+  // Reaching a step marks every earlier step as visited too — jumping from
+  // step 1 to step 5 counts 2–4 as seen. Each still only earns a checkmark
+  // when its own required fields are filled (see `done` in the stepper).
   useEffect(() => {
-    setVisited((prev) => (prev.has(step) ? prev : new Set(prev).add(step)))
+    setVisited((prev) => {
+      const next = new Set(prev)
+      for (let i = 0; i <= step; i++) next.add(i)
+      return next.size === prev.size ? prev : next
+    })
   }, [step])
 
   // Hand the visited set back up so a parent can persist it across reopens.
