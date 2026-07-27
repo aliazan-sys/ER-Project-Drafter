@@ -198,6 +198,10 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     organizationName: contact.organizationName || '',
     firstName: contact.firstName || '',
     lastName: contact.lastName || '',
+    // Sent top-level, deliberately NOT inside `draft`: drafts are persisted to
+    // our own history store and echoed back to the browser, and a credential
+    // must not ride along into either.
+    password: contact.password || '',
     draft: {
       ...d,
       // Enforced again at the boundary, not just in the form: whatever the

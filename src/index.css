@@ -974,6 +974,47 @@ body {
   margin: 10px 0 0;
 }
 
+/* Password field: the Show/Hide control sits inside the input, so the input
+   needs right padding wide enough that a typed value never runs under it. */
+.pw-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pw-input {
+  padding-right: 68px;
+}
+
+.pw-toggle {
+  position: absolute;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: var(--teal);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pw-toggle:hover:not(:disabled) {
+  background: rgba(21, 151, 165, 0.1);
+}
+
+.pw-toggle:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.signup-hint {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
 .signup-fine {
   color: var(--ink-soft);
   font-size: 13px;

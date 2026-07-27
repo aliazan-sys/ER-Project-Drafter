@@ -462,18 +462,26 @@ export default function ProjectDraftModal({
 }
 
 // --- Email capture + submit to the EqualReach web app ---------------------
+const MIN_PASSWORD = 8
+
 function SignupModal({ draft, onClose }) {
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
   const [error, setError] = useState('')
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  // Not trimmed: leading/trailing spaces are legitimate password characters,
+  // and silently stripping them would break the login they just set up.
+  const passwordValid = password.length >= MIN_PASSWORD
   const valid =
     emailValid &&
     firstName.trim() !== '' &&
-    lastName.trim() !== ''
+    lastName.trim() !== '' &&
+    passwordValid
 
   async function submit(e) {
     e?.preventDefault()
@@ -484,6 +492,7 @@ function SignupModal({ draft, onClose }) {
       const { aiDrafterToken } = await submitDraftSignup(email.trim(), draft, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        password,
       })
       setStatus('done')
       const url = loginUrlForToken(aiDrafterToken)
@@ -529,7 +538,7 @@ function SignupModal({ draft, onClose }) {
           <form onSubmit={submit}>
             <h2 className="signup-title">Submit your project</h2>
             <p className="signup-sub">
-              Enter your email and we'll create your EqualReach account with this project draft
+              Enter your details and we'll create your EqualReach account with this project draft
               ready to go.
             </p>
 
@@ -569,8 +578,45 @@ function SignupModal({ draft, onClose }) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
+              autoComplete="email"
               disabled={status === 'submitting'}
             />
+
+            <label className="flabel" htmlFor="signup-password" style={{ marginTop: 18 }}>Password <span className="req">*</span></label>
+            <div className="pw-wrap">
+              <input
+                id="signup-password"
+                className="inp pw-input"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={`At least ${MIN_PASSWORD} characters`}
+                // new-password, not current-password: this creates the account,
+                // so browsers should offer to generate and save rather than
+                // autofill an existing credential.
+                autoComplete="new-password"
+                minLength={MIN_PASSWORD}
+                disabled={status === 'submitting'}
+                aria-describedby="signup-password-hint"
+              />
+              <button
+                type="button"
+                className="pw-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                disabled={status === 'submitting'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="signup-hint" id="signup-password-hint">
+              {/* Only nags once they have started typing — an untouched field
+                  showing an error reads as a complaint about nothing. */}
+              {password && !passwordValid
+                ? `Use at least ${MIN_PASSWORD} characters — that's ${MIN_PASSWORD - password.length} more.`
+                : `This is the password you'll use to log in to EqualReach.`}
+            </p>
 
             {status === 'error' && <p className="signup-error">⚠️ {error}</p>}
 
