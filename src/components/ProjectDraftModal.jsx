@@ -3,6 +3,7 @@ import { submitDraftSignup, loginUrlForToken, toDateInputValue, formatDisplayDat
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
 import { ORG_TYPES, ORG_SIZES } from '../../shared/orgProfile.js'
+import { CATEGORIES, MAX_CATEGORIES } from '../../shared/categories.js'
 
 const STEPS = [
   { id: 'title', label: 'Title' },
@@ -44,28 +45,8 @@ const CURRENCIES = ['GBP', 'EUR', 'USD']
 const CURRENCY_SYMBOL = { GBP: '£', EUR: '€', USD: '$' }
 // Keep only digits and separators — cost fields are numbers, not free text.
 const numericOnly = (s) => String(s ?? '').replace(/[^\d.,]/g, '')
-// Fixed set of project categories — users pick up to 3 (see the Skills step).
-const CATEGORIES = [
-  'Writing & Translation',
-  'Web Development',
-  'Video & Audio',
-  'Software Development',
-  'Research',
-  'Programming',
-  'Marketing & Sales',
-  'Legal',
-  'Language',
-  'Game Development',
-  'Content Writing',
-  'Engineering & Architect',
-  'Education',
-  'Data Processing',
-  'Design & Creative',
-  'Customer Service',
-  'Business & Admin',
-  'App Development',
-  'AI/ML',
-]
+// CATEGORIES / MAX_CATEGORIES are shared with the server (shared/categories.js)
+// so the AI can only choose values this form actually offers.
 // Fixed list of languages for the Advanced Terms picker.
 const LANGUAGES = [
   'Swahili',
@@ -1220,7 +1201,13 @@ function timeline(scope) {
 function normalize(d = {}) {
   return {
     title: d.title || '',
-    categories: d.categories || [],
+    // Last line of defence for categories: the schema enum and the prompt both
+    // constrain the model, but a stored draft from before those landed — or any
+    // slip past them — must not show up as a selected chip the user could never
+    // have picked. Drop anything off-list, de-duplicate, and hold to the cap.
+    categories: [...new Set(d.categories || [])]
+      .filter((c) => CATEGORIES.includes(c))
+      .slice(0, MAX_CATEGORIES),
     skills: d.skills || [],
     scope: {
       complexity: '',
@@ -1250,7 +1237,6 @@ function normalize(d = {}) {
     },
     description: d.description || '',
     existingAssets: d.existingAssets || '',
-    projectGoals: { impactGoal: '', impactDescription: '', ...(d.projectGoals || {}) },
     orgProfile: {
       industry: '', location: '',
       ...(d.orgProfile || {}),

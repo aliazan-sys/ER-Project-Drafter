@@ -9,6 +9,7 @@
 
 import { TIMEZONES } from './timezones.js'
 import { ORG_TYPES, ORG_SIZES } from './orgProfile.js'
+import { CATEGORIES, MAX_CATEGORIES } from './categories.js'
 
 // Provider selection: Gemini direct by default. Now that Gemini billing is
 // enabled we route through the Gemini API (no rate limiting). OpenRouter stays
@@ -38,7 +39,9 @@ export const responseSchema = {
   type: 'object',
   properties: {
     title: { type: 'string' },
-    categories: { type: 'array', items: { type: 'string' } },
+    // Enum-constrained, unlike orgProfile's type/size: a category is never the
+    // empty string, so there is no empty enum value for Gemini to reject.
+    categories: { type: 'array', items: { type: 'string', enum: CATEGORIES } },
     skills: { type: 'array', items: { type: 'string' } },
     scope: {
       type: 'object',
@@ -64,13 +67,6 @@ export const responseSchema = {
     },
     description: { type: 'string' },
     existingAssets: { type: 'string' },
-    projectGoals: {
-      type: 'object',
-      properties: {
-        impactGoal: { type: 'string' },
-        impactDescription: { type: 'string' },
-      },
-    },
     orgProfile: {
       type: 'object',
       properties: {
@@ -98,7 +94,7 @@ export const responseSchema = {
       },
     },
   },
-  required: ['title', 'categories', 'description', 'scope', 'budget', 'projectGoals'],
+  required: ['title', 'categories', 'description', 'scope', 'budget'],
 }
 
 const buildSystemInstruction = (today) => `You are the "EqualReach Project Request Drafter".
@@ -113,8 +109,12 @@ never leave a field blank and never write placeholder text like "N/A" or "TBD".
 
 Guidelines:
 - title: short, clear, outcome-oriented (max ~8 words).
-- categories: 1-3 high-level skill categories (e.g. "Web Development",
-  "Brand & Design", "Marketing").
+- categories: 1-${MAX_CATEGORIES} categories copied VERBATIM from this fixed list —
+  never invent, reword, split, merge or abbreviate one, and never emit a value
+  that is not character-for-character on it:
+${CATEGORIES.map((c) => `    "${c}"`).join('\n')}
+  Pick the closest available match. If nothing fits well, choose the single
+  nearest category rather than coining a new one.
 - skills: 3-6 concrete tools/skills (e.g. "React", "Figma", "SEO", "Copywriting").
 - scope.complexity: pick Large / Medium / Small based on the ask.
 - scope.startDate / completionDate: realistic EXACT calendar dates in the future
@@ -137,8 +137,6 @@ Guidelines:
 - description: 2-4 rich paragraphs covering deliverables, success criteria,
   collaboration style and scope clarity (this is the meatiest field).
 - existingAssets: what the client likely already has, or "None specified" if truly none.
-- projectGoals.impactGoal: the successful-outcome statement in the user's voice.
-- projectGoals.impactDescription: the longer-run organisational/social impact.
 - orgProfile: THE ONLY EXCEPTION to the "never leave blank / invent details" rule.
   Fill type, size, industry and location ONLY from what the user EXPLICITLY stated
   about their organisation. If the user did not clearly give a field, return ""
