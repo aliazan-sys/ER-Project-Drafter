@@ -16,7 +16,13 @@
     function frames() {
       return Array.prototype.slice.call(document.querySelectorAll('iframe')).filter(function (f) {
         var src = f.getAttribute('src') || '';
-        return src.indexOf('er-project-drafter') !== -1 || src.indexOf('embed=draft') !== -1;
+        if (src.indexOf('er-project-drafter') === -1 && src.indexOf('embed=draft') === -1) return false;
+        // Never touch the floating chat bubble: its URL is on the same host,
+        // but it is sized to 100% of #er-panel, which manages its own height.
+        // Forcing a viewport height on it would break the popup.
+        if (src.indexOf('embed=1') !== -1) return false;
+        if (f.closest && f.closest('#er-panel')) return false;
+        return true;
       });
     }
 
