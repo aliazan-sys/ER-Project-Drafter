@@ -2,37 +2,45 @@
 <!-- EqualReach AI Drafter — full-page embed for the Webflow "AI Drafter"    -->
 <!-- page. Paste into: Page Settings → Custom Code → Before </body>.         -->
 <!--                                                                        -->
-<!-- Why this exists: the drafter iframe is normally given height:100vh, but -->
-<!-- it starts *below* the sticky Webflow nav. 100vh is the whole window, so -->
-<!-- the bottom of the frame — the text input — ends up under the fold and   -->
-<!-- can't be reached. This sizes the frame to the space actually left below -->
-<!-- the nav, so the composer always lands on screen.                        -->
+<!-- Why this exists: the drafter iframe is given height:100vh, but it       -->
+<!-- starts *below* the Webflow nav. 100vh is the whole window, so the frame -->
+<!-- overhangs the fold by the nav's height and its bottom row — the text    -->
+<!-- input — can't be reached. The app can't fix this from inside: within an -->
+<!-- iframe, 100vh/100dvh both resolve to the frame's own height, so it has  -->
+<!-- no way to know part of itself is off-screen. Only the host can size it. -->
 <!-- ===================================================================== -->
 <script>
   (function () {
-    // Any drafter iframe on the page, however it was added in Webflow.
+    // Match the drafter frame by host rather than by query string, so this
+    // works whether the embed URL is ?embed=draft, #/draft, or a bare link.
     function frames() {
-      return Array.prototype.slice.call(
-        document.querySelectorAll('iframe[src*="embed=draft"]')
-      );
+      return Array.prototype.slice.call(document.querySelectorAll('iframe')).filter(function (f) {
+        var src = f.getAttribute('src') || '';
+        return src.indexOf('er-project-drafter') !== -1 || src.indexOf('embed=draft') !== -1;
+      });
     }
 
     function fit() {
       frames().forEach(function (f) {
-        // Measure from the frame's own top edge, so this stays correct no
-        // matter how tall the nav is or whether a banner sits above it.
-        var top = f.getBoundingClientRect().top;
-        var avail = window.innerHeight - top;
-        // Guard against a frame scrolled fully out of view, and keep a floor so
-        // the drafter never collapses to nothing on very short windows.
-        f.style.height = Math.max(480, avail) + 'px';
+        // Distance from the top of the *document*, not the viewport. Using the
+        // viewport would feed back on itself: scrolling down shrinks rect.top,
+        // which grows the frame, which lengthens the page, which allows more
+        // scroll. Document-relative offset is stable at any scroll position.
+        var rect = f.getBoundingClientRect();
+        var offset = rect.top + (window.scrollY || window.pageYOffset || 0);
+        // Floor so the drafter never collapses to nothing on short windows.
+        var height = Math.max(480, window.innerHeight - offset);
+        // Webflow's own styles can carry !important, so match it.
+        f.style.setProperty('height', height + 'px', 'important');
       });
     }
 
     window.addEventListener('resize', fit);
     window.addEventListener('orientationchange', fit);
-    window.addEventListener('scroll', fit, { passive: true });
     document.addEventListener('DOMContentLoaded', fit);
+    // The frame may be added late (Webflow interactions, lazy embeds), so
+    // re-fit a few times as the page settles.
+    [100, 400, 1000].forEach(function (ms) { setTimeout(fit, ms); });
     fit();
   })();
 </script>
