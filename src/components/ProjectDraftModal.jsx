@@ -468,6 +468,7 @@ function SignupModal({ draft, onClose }) {
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [organizationName, setOrganizationName] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
@@ -481,6 +482,7 @@ function SignupModal({ draft, onClose }) {
     emailValid &&
     firstName.trim() !== '' &&
     lastName.trim() !== '' &&
+    organizationName.trim() !== '' &&
     passwordValid
 
   async function submit(e) {
@@ -492,6 +494,7 @@ function SignupModal({ draft, onClose }) {
       const { aiDrafterToken } = await submitDraftSignup(email.trim(), draft, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        organizationName: organizationName.trim(),
         password,
       })
       setStatus('done')
@@ -569,6 +572,18 @@ function SignupModal({ draft, onClose }) {
                 />
               </div>
             </div>
+
+            <label className="flabel" htmlFor="signup-org" style={{ marginTop: 18 }}>Organization name <span className="req">*</span></label>
+            <input
+              id="signup-org"
+              className="inp"
+              type="text"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
+              placeholder="Example Charity"
+              autoComplete="organization"
+              disabled={status === 'submitting'}
+            />
 
             <label className="flabel" htmlFor="signup-email" style={{ marginTop: 18 }}>Email address <span className="req">*</span></label>
             <input
