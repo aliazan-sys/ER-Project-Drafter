@@ -56,16 +56,23 @@
     // per-page in Webflow, so it stays hidden wherever the drafter is embedded.
     // A stylesheet !important rule, because the bubble script drives the dock
     // with inline display styles, which this has to outrank.
-    if (frames().length) {
-      var hide = document.createElement('style');
-      hide.textContent = '#er-dock,#er-panel,#er-backdrop{display:none !important}';
-      (document.head || document.documentElement).appendChild(hide);
+    function hide() {
+      // Runs on the same settle loop as fit(), not once at parse: if the frame
+      // is not in the DOM yet on first pass, a one-shot check would give up and
+      // leave the bubble showing forever.
+      if (!frames().length || document.getElementById('er-hide')) return;
+      var s = document.createElement('style');
+      s.id = 'er-hide';
+      s.textContent = '#er-dock,#er-panel,#er-backdrop{display:none !important}';
+      (document.head || document.documentElement).appendChild(s);
     }
 
-    window.addEventListener('resize', fit);
-    window.addEventListener('orientationchange', fit);
-    document.addEventListener('DOMContentLoaded', fit);
-    window.addEventListener('load', fit);
+    function go() { hide(); fit(); }
+
+    window.addEventListener('resize', go);
+    window.addEventListener('orientationchange', go);
+    document.addEventListener('DOMContentLoaded', go);
+    window.addEventListener('load', go);
 
     // Why this is not a one-shot: measuring during load can catch the frame
     // before Webflow has laid out the nav, when its offset is still 0. That
@@ -73,15 +80,13 @@
     // is meant to replace — and a single late timeout is a guess at when the
     // page settles. So re-check until the layout stops moving, and keep
     // watching for anything that shifts the frame afterwards.
-    var settle = setInterval(fit, 250);
+    var settle = setInterval(go, 250);
     setTimeout(function () { clearInterval(settle); }, 15000);
 
     if (window.ResizeObserver) {
-      var ro = new ResizeObserver(fit);
-      ro.observe(document.documentElement);
-      frames().forEach(function (f) { ro.observe(f); });
+      new ResizeObserver(go).observe(document.documentElement);
     }
 
-    fit();
+    go();
   })();
 </script>

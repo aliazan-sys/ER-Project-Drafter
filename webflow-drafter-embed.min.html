@@ -1,0 +1,17 @@
+<!-- EqualReach drafter fitter — compact build of webflow-drafter-embed.html.
+     Paste this one into Webflow Footer Code: the readable version plus the
+     bubble snippet exceed Webflow's 10,000-character limit per field, which
+     truncates the paste and silently kills whichever script lands second.
+     Edit the readable file, then re-minify here. -->
+<script>
+(function(){
+function q(){return[].slice.call(document.querySelectorAll('iframe')).filter(function(f){var s=f.getAttribute('src')||'';if(s.indexOf('er-project-drafter')<0&&s.indexOf('embed=draft')<0)return false;if(s.indexOf('embed=1')>-1)return false;return!(f.closest&&f.closest('#er-panel'))})}
+function fit(){q().forEach(function(f){var r=f.getBoundingClientRect(),o=r.top+(window.scrollY||0),h=Math.max(480,window.innerHeight-o);if(Math.abs(r.height-h)<1)return;f.style.setProperty('height',h+'px','important')})}
+function hide(){if(!q().length||document.getElementById('er-hide'))return;var s=document.createElement('style');s.id='er-hide';s.textContent='#er-dock,#er-panel,#er-backdrop{display:none!important}';(document.head||document.documentElement).appendChild(s)}
+function go(){hide();fit()}
+addEventListener('resize',go);addEventListener('orientationchange',go);addEventListener('load',go);
+document.addEventListener('DOMContentLoaded',go);
+var t=setInterval(go,250);setTimeout(function(){clearInterval(t)},15000);
+if(window.ResizeObserver)new ResizeObserver(go).observe(document.documentElement);
+go()})();
+</script>
