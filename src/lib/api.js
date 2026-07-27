@@ -1,6 +1,8 @@
 // Talks to our own Express proxy (server.js), never directly to Google.
 // The API key lives on the server, so it is never exposed to the browser.
 
+import { CATEGORIES } from '../../shared/categories.js'
+
 // Stable anonymous identity — generated once, persisted in localStorage.
 // Lets the server filter history to this browser without requiring an account.
 function getVisitorId() {
@@ -198,6 +200,11 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     lastName: contact.lastName || '',
     draft: {
       ...d,
+      // Enforced again at the boundary, not just in the form: whatever the
+      // model or a stored draft supplied, only predefined categories leave the
+      // browser. A category the user could not have selected must never reach
+      // the EqualReach app.
+      categories: (d.categories || []).filter((c) => CATEGORIES.includes(c)),
       levelOfExperience: toOption(d.levelOfExperience, EXPERIENCE_MAP),
       scope: {
         ...scope,
