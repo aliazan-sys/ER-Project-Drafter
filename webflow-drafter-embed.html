@@ -36,6 +36,9 @@
         var offset = rect.top + (window.scrollY || window.pageYOffset || 0);
         // Floor so the drafter never collapses to nothing on short windows.
         var height = Math.max(480, window.innerHeight - offset);
+        // Only write on a real change. Unconditional writes would make the
+        // ResizeObserver below re-enter fit() forever.
+        if (Math.abs(rect.height - height) < 1) return;
         // Webflow's own styles can carry !important, so match it.
         f.style.setProperty('height', height + 'px', 'important');
       });
@@ -44,9 +47,23 @@
     window.addEventListener('resize', fit);
     window.addEventListener('orientationchange', fit);
     document.addEventListener('DOMContentLoaded', fit);
-    // The frame may be added late (Webflow interactions, lazy embeds), so
-    // re-fit a few times as the page settles.
-    [100, 400, 1000].forEach(function (ms) { setTimeout(fit, ms); });
+    window.addEventListener('load', fit);
+
+    // Why this is not a one-shot: measuring during load can catch the frame
+    // before Webflow has laid out the nav, when its offset is still 0. That
+    // yields a full-viewport height — indistinguishable from the 100vh bug it
+    // is meant to replace — and a single late timeout is a guess at when the
+    // page settles. So re-check until the layout stops moving, and keep
+    // watching for anything that shifts the frame afterwards.
+    var settle = setInterval(fit, 250);
+    setTimeout(function () { clearInterval(settle); }, 15000);
+
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(fit);
+      ro.observe(document.documentElement);
+      frames().forEach(function (f) { ro.observe(f); });
+    }
+
     fit();
   })();
 </script>
