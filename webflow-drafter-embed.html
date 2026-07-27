@@ -1,6 +1,12 @@
 <!-- ===================================================================== -->
 <!-- EqualReach AI Drafter — full-page embed for the Webflow "AI Drafter"    -->
-<!-- page. Paste into: Page Settings → Custom Code → Before </body>.         -->
+<!-- page. Paste into Footer Code (Project Settings) or the "Before </body>" -->
+<!-- box (Page Settings). Safe site-wide: on pages with no drafter iframe it -->
+<!-- finds nothing and does nothing.                                         -->
+<!--                                                                        -->
+<!-- Does two things, both only where a drafter iframe is present:           -->
+<!--   1. Sizes the frame to the space actually left below the nav.          -->
+<!--   2. Hides the floating chat bubble, redundant on the drafter page.     -->
 <!--                                                                        -->
 <!-- Why this exists: the drafter iframe is given height:100vh, but it       -->
 <!-- starts *below* the Webflow nav. 100vh is the whole window, so the frame -->
@@ -42,6 +48,18 @@
         // Webflow's own styles can carry !important, so match it.
         f.style.setProperty('height', height + 'px', 'important');
       });
+    }
+
+    // The floating bubble is installed site-wide, but on a page that already
+    // embeds the full drafter it is redundant — two ways into the same flow,
+    // one of them covering the other's composer. Suppress it here rather than
+    // per-page in Webflow, so it stays hidden wherever the drafter is embedded.
+    // A stylesheet !important rule, because the bubble script drives the dock
+    // with inline display styles, which this has to outrank.
+    if (frames().length) {
+      var hide = document.createElement('style');
+      hide.textContent = '#er-dock,#er-panel,#er-backdrop{display:none !important}';
+      (document.head || document.documentElement).appendChild(hide);
     }
 
     window.addEventListener('resize', fit);
