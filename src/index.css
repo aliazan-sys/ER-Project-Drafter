@@ -32,7 +32,11 @@ body {
 .app {
   display: flex;
   flex-direction: column;
+  /* dvh, not vh: 100vh is the *largest* viewport (browser chrome hidden), so a
+     100vh shell hides its own bottom — the composer — behind the address bar.
+     vh first as the fallback for engines without dvh. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   max-width: 820px;
   margin: 0 auto;
@@ -2220,7 +2224,7 @@ button.edit-pencil {
   flex-wrap: wrap;
   gap: 10px;
   max-width: 900px;
-  margin: 0 auto 12px;
+  margin: 0 auto 10px;
   padding: 0 6px;
 }
 
@@ -2292,7 +2296,9 @@ button.edit-pencil {
 .chat-panel-shell .composer {
   border-top: none;
   background: transparent;
-  padding: 0 24px 24px;
+  /* Kept tight: when the drafter is iframed under the Webflow nav the frame can
+     extend past the fold, and every pixel here pushes the input off-screen. */
+  padding: 0 24px 14px;
 }
 
 .chat-panel-shell .chat-inner {
@@ -2300,8 +2306,10 @@ button.edit-pencil {
   gap: 26px;
 }
 
+/* Small bottom padding — the composer below supplies the breathing room, so a
+   large one here is pure dead space between the last message and the input. */
 .chat-panel-shell .chat {
-  padding: 36px 24px;
+  padding: 24px 24px 8px;
 }
 
 /* The bubble widget is compact — keep its send button small. */

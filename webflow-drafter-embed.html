@@ -1,0 +1,38 @@
+<!-- ===================================================================== -->
+<!-- EqualReach AI Drafter — full-page embed for the Webflow "AI Drafter"    -->
+<!-- page. Paste into: Page Settings → Custom Code → Before </body>.         -->
+<!--                                                                        -->
+<!-- Why this exists: the drafter iframe is normally given height:100vh, but -->
+<!-- it starts *below* the sticky Webflow nav. 100vh is the whole window, so -->
+<!-- the bottom of the frame — the text input — ends up under the fold and   -->
+<!-- can't be reached. This sizes the frame to the space actually left below -->
+<!-- the nav, so the composer always lands on screen.                        -->
+<!-- ===================================================================== -->
+<script>
+  (function () {
+    // Any drafter iframe on the page, however it was added in Webflow.
+    function frames() {
+      return Array.prototype.slice.call(
+        document.querySelectorAll('iframe[src*="embed=draft"]')
+      );
+    }
+
+    function fit() {
+      frames().forEach(function (f) {
+        // Measure from the frame's own top edge, so this stays correct no
+        // matter how tall the nav is or whether a banner sits above it.
+        var top = f.getBoundingClientRect().top;
+        var avail = window.innerHeight - top;
+        // Guard against a frame scrolled fully out of view, and keep a floor so
+        // the drafter never collapses to nothing on very short windows.
+        f.style.height = Math.max(480, avail) + 'px';
+      });
+    }
+
+    window.addEventListener('resize', fit);
+    window.addEventListener('orientationchange', fit);
+    window.addEventListener('scroll', fit, { passive: true });
+    document.addEventListener('DOMContentLoaded', fit);
+    fit();
+  })();
+</script>
