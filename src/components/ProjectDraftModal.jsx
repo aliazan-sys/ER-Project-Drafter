@@ -10,9 +10,12 @@ const STEPS = [
   { id: 'scope', label: 'Scope' },
   { id: 'investment', label: 'Investment' },
   { id: 'description', label: 'Description' },
-  { id: 'goals', label: 'Project Goals' },
   { id: 'review', label: 'Review' },
 ]
+
+// Resolve a step by id rather than position. The Review pencils used literal
+// indices, which silently misroute the moment a step is added or removed.
+const stepIndex = (id) => STEPS.findIndex((s) => s.id === id)
 
 const COMPLEXITY = [
   { value: 'Large', desc: 'Long-term, complex projects (e.g. develop a nationwide campaign)' },
@@ -105,7 +108,12 @@ export default function ProjectDraftModal({
   onVisitedChange,
 }) {
   const [form, setForm] = useState(() => normalize(draft))
-  const [step, setStepState] = useState(initialStep)
+  // Clamped: a caller can hand back a step index saved before the step list
+  // changed, and an out-of-range one makes STEPS[step] undefined — a blank
+  // wizard that throws on current.id.
+  const [step, setStepState] = useState(
+    () => Math.min(Math.max(initialStep | 0, 0), STEPS.length - 1),
+  )
   const [signupOpen, setSignupOpen] = useState(false)
   // Only surfaced once they try to move on, so the form doesn't scold on open.
   const [showDateError, setShowDateError] = useState(false)
@@ -432,15 +440,6 @@ export default function ProjectDraftModal({
               </Section>
             )}
 
-            {current.id === 'goals' && (
-              <Section title="Describe your Project Goals" sub="Help us understand the impact you want to create.">
-                <Label required>What does a successful outcome look like for this project?</Label>
-                <textarea className="inp area" value={form.projectGoals.impactGoal} onChange={(e) => set('projectGoals.impactGoal', e.target.value)} rows={4} />
-                <Label required>How will completing this project help your organization in the long run?</Label>
-                <textarea className="inp area" value={form.projectGoals.impactDescription} onChange={(e) => set('projectGoals.impactDescription', e.target.value)} rows={4} />
-              </Section>
-            )}
-
             {current.id === 'review' && (
               <ReviewStep
                 form={form}
@@ -649,31 +648,31 @@ function ReviewStep({ form, set, goTo, missingOrg = [] }) {
         </p>
       )}
 
-      <SummaryCard title="Project Title" onEdit={() => goTo(0)}>
+      <SummaryCard title="Project Title" onEdit={() => goTo(stepIndex('title'))}>
         <p className="strong">{form.title || '—'}</p>
       </SummaryCard>
 
       {/* Category, Skills, Scope and Budget share one card, each as its own
           row with its own edit pencil (matches the platform review layout). */}
       <section className="card summary-group">
-        <SummaryRow title="Category" onEdit={() => goTo(1)}>
+        <SummaryRow title="Category" onEdit={() => goTo(stepIndex('skills'))}>
           {form.categories?.length
             ? <p>{form.categories.join(', ')}</p>
             : <p className="muted">No categories</p>}
         </SummaryRow>
 
-        <SummaryRow title="Skills" onEdit={() => goTo(1)}>
+        <SummaryRow title="Skills" onEdit={() => goTo(stepIndex('skills'))}>
           <TagList items={form.skills} empty="No skills" />
         </SummaryRow>
 
-        <SummaryRow title="Scope" onEdit={() => goTo(2)}>
+        <SummaryRow title="Scope" onEdit={() => goTo(stepIndex('scope'))}>
           <div className="grid-2">
             <Field icon={<FrameIcon />} label="Project Size" value={form.scope.complexity} />
             <Field icon={<CalendarIcon />} label="Timeline" value={timeline(form.scope)} />
           </div>
         </SummaryRow>
 
-        <SummaryRow title="Budget" onEdit={() => goTo(3)}>
+        <SummaryRow title="Budget" onEdit={() => goTo(stepIndex('investment'))}>
           <div className="grid-3">
             <Field icon={<DollarIcon />} label="Currency" value={form.budget.currency} />
             <Field icon={<CardIcon />} label="Payment Type" value={form.budget.pricingType} />
@@ -689,17 +688,12 @@ function ReviewStep({ form, set, goTo, missingOrg = [] }) {
         </SummaryRow>
       </section>
 
-      <SummaryCard title="Description" onEdit={() => goTo(4)}>
+      <SummaryCard title="Description" onEdit={() => goTo(stepIndex('description'))}>
         <Paragraphs text={form.description} />
         <div className="subfield">
           <span className="sub-label">Additional Assets Client Will Provide</span>
           <p>{form.existingAssets || 'None specified'}</p>
         </div>
-      </SummaryCard>
-
-      <SummaryCard title="Project Goals" onEdit={() => goTo(5)}>
-        <div className="subfield"><span className="sub-label">Impact Goal</span><p>{form.projectGoals.impactGoal || '—'}</p></div>
-        <div className="subfield"><span className="sub-label">Impact Description</span><p>{form.projectGoals.impactDescription || '—'}</p></div>
       </SummaryCard>
 
       <h3 className="section-title">Additional Information</h3>
@@ -1178,9 +1172,6 @@ function isStepComplete(id, form) {
     }
     case 'description':
       return Boolean(form.description?.trim())
-    case 'goals':
-      return Boolean(form.projectGoals?.impactGoal?.trim()) &&
-        Boolean(form.projectGoals?.impactDescription?.trim())
     case 'review':
       // Review is only complete once the org profile is, since that block is
       // the one thing on this step the user still has to supply.
