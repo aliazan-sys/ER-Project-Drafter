@@ -680,6 +680,13 @@ body {
   gap: 3px;
 }
 
+/* Flagged only after a blocked submit, so it reads as an answer to "why can't
+   I continue?" rather than scolding a form the user hasn't finished yet. */
+.chip.is-invalid {
+  border-color: #e02424;
+  background: #fef4f4;
+}
+
 .chip-label {
   font-size: 11px;
   font-weight: 700;

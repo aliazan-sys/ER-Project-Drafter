@@ -109,6 +109,7 @@ export default function ProjectDraftModal({
   const [signupOpen, setSignupOpen] = useState(false)
   // Only surfaced once they try to move on, so the form doesn't scold on open.
   const [showDateError, setShowDateError] = useState(false)
+  const [showOrgError, setShowOrgError] = useState(false)
   // Steps the user has actually landed on. A step earns its checkmark once it
   // has been visited AND its mandatory inputs are filled — and keeps it when
   // they move away (forward or back), instead of only marking steps < current.
@@ -140,6 +141,8 @@ export default function ProjectDraftModal({
   }, [visited])
 
   const SCOPE_STEP = STEPS.findIndex((s) => s.id === 'scope')
+  const REVIEW_STEP = STEPS.findIndex((s) => s.id === 'review')
+  const missingOrg = missingOrgFields(form)
   // A timeline needs one end or the other — or an "Ongoing" retainer, which has
   // no end date by design.
   const hasDate = Boolean(form.scope.startDate || form.scope.completionDate || form.scope.ongoing)
@@ -165,6 +168,14 @@ export default function ProjectDraftModal({
     if (!hasDate) {
       setStep(SCOPE_STEP)
       setShowDateError(true)
+      return
+    }
+    // The org profile chips live on this step and the AI never fills them in,
+    // so they are routinely still blank at this point. Hold the signup modal
+    // back and point at what's missing rather than submitting a partial brief.
+    if (missingOrg.length) {
+      setStep(REVIEW_STEP)
+      setShowOrgError(true)
       return
     }
     // Persist edits, then open the email-capture modal. The actual submit to
@@ -431,7 +442,12 @@ export default function ProjectDraftModal({
             )}
 
             {current.id === 'review' && (
-              <ReviewStep form={form} set={set} goTo={setStep} />
+              <ReviewStep
+                form={form}
+                set={set}
+                goTo={setStep}
+                missingOrg={showOrgError ? missingOrg : []}
+              />
             )}
           </div>
 
@@ -603,13 +619,16 @@ function SignupModal({ draft, onClose }) {
 }
 
 // --- Review (Step 7) summary, with editable extras ------------------------
-function ReviewStep({ form, set, goTo }) {
+// `missingOrg` carries the labels of blank required org fields, but only once
+// the user has tried to submit — an empty array means "say nothing yet".
+function ReviewStep({ form, set, goTo, missingOrg = [] }) {
   const org = form.orgProfile
   const adv = form.advancedTerms
+  const flagged = (label) => missingOrg.includes(label)
   return (
     <Section title="Review" sub="Review your project details and submit when you're ready.">
       <div className="org-head">
-        <h4>Your Organization Profile Summary</h4>
+        <h4>Your Organization Profile Summary <span className="req">*</span></h4>
         <span className="info-dot" tabIndex={0}>
           i
           <span className="info-tip" role="tooltip">
@@ -618,11 +637,17 @@ function ReviewStep({ form, set, goTo }) {
         </span>
       </div>
       <div className="chip-row">
-        <SelectChip label="Type" value={org.type} options={ORG_TYPES} onChange={(v) => set('orgProfile.type', v)} />
-        <SelectChip label="Size" value={org.size} options={ORG_SIZES} onChange={(v) => set('orgProfile.size', v)} />
-        <EditChip label="Industry" value={org.industry} onChange={(v) => set('orgProfile.industry', v)} />
-        <EditChip label="Location" value={org.location} onChange={(v) => set('orgProfile.location', v)} />
+        <SelectChip label="Type" value={org.type} options={ORG_TYPES} invalid={flagged('Type')} onChange={(v) => set('orgProfile.type', v)} />
+        <SelectChip label="Size" value={org.size} options={ORG_SIZES} invalid={flagged('Size')} onChange={(v) => set('orgProfile.size', v)} />
+        <EditChip label="Industry" value={org.industry} invalid={flagged('Industry')} onChange={(v) => set('orgProfile.industry', v)} />
+        <EditChip label="Location" value={org.location} invalid={flagged('Location')} onChange={(v) => set('orgProfile.location', v)} />
       </div>
+      {missingOrg.length > 0 && (
+        <p className="field-error">
+          ⚠️ Please complete your organization profile before submitting —{' '}
+          {missingOrg.join(', ')} {missingOrg.length === 1 ? 'is' : 'are'} still empty.
+        </p>
+      )}
 
       <SummaryCard title="Project Title" onEdit={() => goTo(0)}>
         <p className="strong">{form.title || '—'}</p>
@@ -1054,9 +1079,9 @@ function ScreeningQuestions({ items = [], suggestions = [], onChange }) {
   )
 }
 
-function EditChip({ label, value, onChange }) {
+function EditChip({ label, value, invalid, onChange }) {
   return (
-    <div className="chip">
+    <div className={`chip ${invalid ? 'is-invalid' : ''}`}>
       <span className="chip-label">{label}</span>
       <input className="chip-input" value={value || ''} onChange={(e) => onChange(e.target.value)} />
     </div>
@@ -1067,9 +1092,9 @@ function EditChip({ label, value, onChange }) {
 // options are offered — an off-list value is never added to the dropdown. When
 // nothing is selected it shows a "Select…" prompt rather than defaulting to the
 // first option, so an unanswered field never looks pre-filled.
-function SelectChip({ label, value, options, onChange }) {
+function SelectChip({ label, value, options, invalid, onChange }) {
   return (
-    <div className="chip">
+    <div className={`chip ${invalid ? 'is-invalid' : ''}`}>
       <span className="chip-label">{label}</span>
       <select
         className={`chip-input chip-select ${value ? '' : 'is-empty'}`}
@@ -1157,10 +1182,30 @@ function isStepComplete(id, form) {
       return Boolean(form.projectGoals?.impactGoal?.trim()) &&
         Boolean(form.projectGoals?.impactDescription?.trim())
     case 'review':
-      return true
+      // Review is only complete once the org profile is, since that block is
+      // the one thing on this step the user still has to supply.
+      return missingOrgFields(form).length === 0
     default:
       return false
   }
+}
+
+// The four chips under "Your Organization Profile Summary". All are required:
+// they are what gets shared, anonymized, on the project request, so a blank one
+// ships an incomplete brief to matched teams. The AI is told never to invent
+// these, so an unanswered field genuinely arrives empty and must be filled by
+// hand. Returns the labels of whichever are still blank, in display order.
+const ORG_FIELDS = [
+  ['type', 'Type'],
+  ['size', 'Size'],
+  ['industry', 'Industry'],
+  ['location', 'Location'],
+]
+
+function missingOrgFields(form) {
+  return ORG_FIELDS
+    .filter(([key]) => !String(form?.orgProfile?.[key] ?? '').trim())
+    .map(([, label]) => label)
 }
 
 function costRange(budget) {
