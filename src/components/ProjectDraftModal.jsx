@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { submitDraftSignup, loginUrlForToken, toDateInputValue, formatDisplayDate } from '../lib/api.js'
+import {
+  submitDraftSignup,
+  toDateInputValue,
+  formatDisplayDate,
+  fetchPlaceSuggestions,
+  checkHealth,
+  MIN_PLACE_QUERY,
+  LOGIN_URL,
+  REDIRECT_URL,
+  SIGNUP_DUPLICATE,
+} from '../lib/api.js'
+import { trackStage } from '../lib/tracking.js'
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
 import { ORG_TYPES, ORG_SIZES } from '../../shared/orgProfile.js'
@@ -18,6 +29,14 @@ const STEPS = [
 // indices, which silently misroute the moment a step is added or removed.
 const stepIndex = (id) => STEPS.findIndex((s) => s.id === id)
 
+// Where the wizard opens. The draft arrives complete — the AI has already
+// answered every step from the conversation — so the user's job is to check it
+// over, not to walk the questions again. Opening on Review also means the
+// mount effect below marks steps 1–5 as visited, so they show their checkmarks
+// straight away. Callers that persist their own step across reopens seed with
+// this too.
+export const REVIEW_STEP_INDEX = STEPS.findIndex((s) => s.id === 'review')
+
 const COMPLEXITY = [
   { value: 'Large', desc: 'Long-term, complex projects (e.g. develop a nationwide campaign)' },
   { value: 'Medium', desc: 'Well-defined projects (e.g. redesign a company website)' },
@@ -29,7 +48,6 @@ const PRIVACY_URL =
 // NOTE: same URL as the privacy policy — supplied that way. Point this at the
 // real terms page once it exists.
 const TERMS_URL = PRIVACY_URL
-const LOGIN_URL = 'https://app.equalreach.io/version-93726/login'
 
 const PRICING = ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure']
 // Icon per pricing type, shown on the price cards (Investment step).
@@ -80,8 +98,8 @@ export default function ProjectDraftModal({
   onClose,
   onSave,
   // The modal unmounts on close, so a caller that wants the step remembered
-  // holds it and seeds us back. Uncontrolled callers just start at Title.
-  initialStep = 0,
+  // holds it and seeds us back. Uncontrolled callers land on Review.
+  initialStep = REVIEW_STEP_INDEX,
   onStepChange,
   // Persist which steps have been visited so their checkmarks survive the modal
   // closing and reopening. Uncontrolled callers just start fresh each open.
@@ -106,6 +124,24 @@ export default function ProjectDraftModal({
   const [visited, setVisited] = useState(
     () => new Set(initialVisited?.length ? initialVisited : [initialStep]),
   )
+  // Whether Location can be verified at all — i.e. whether a Google Maps key is
+  // configured on the server. Assumed true so the strict rule is the default;
+  // only a definite "no key" relaxes it (see missingOrgFields). AddressChip can
+  // also turn it off later if the key turns out to be rejected at runtime.
+  const [placesReady, setPlacesReady] = useState(true)
+
+  // The wizard opening means a draft was produced and is being reviewed. A
+  // no-op when opened from the history page, where there is no live
+  // conversation to attribute it to (see tracking.js).
+  useEffect(() => { trackStage('review') }, [])
+
+  useEffect(() => {
+    let live = true
+    checkHealth().then((h) => {
+      if (live && h?.placesConfigured === false) setPlacesReady(false)
+    })
+    return () => { live = false }
+  }, [])
 
   const setStep = (s) => {
     setStepState(s)
@@ -131,7 +167,7 @@ export default function ProjectDraftModal({
 
   const SCOPE_STEP = STEPS.findIndex((s) => s.id === 'scope')
   const REVIEW_STEP = STEPS.findIndex((s) => s.id === 'review')
-  const missingOrg = missingOrgFields(form)
+  const missingOrg = missingOrgFields(form, placesReady)
   // A timeline needs one end or the other — or an "Ongoing" retainer, which has
   // no end date by design.
   const hasDate = Boolean(form.scope.startDate || form.scope.completionDate || form.scope.ongoing)
@@ -199,7 +235,7 @@ export default function ProjectDraftModal({
             {STEPS.map((s, i) => {
               // A step is "done" once it's been visited and its required
               // inputs are filled — so the check persists when navigating away.
-              const done = i !== step && visited.has(i) && isStepComplete(s.id, form)
+              const done = i !== step && visited.has(i) && isStepComplete(s.id, form, placesReady)
               return (
                 <li
                   key={s.id}
@@ -219,7 +255,7 @@ export default function ProjectDraftModal({
           <div className="wiz-head">
             <div className="wiz-step-count">
               Step {step + 1} of {STEPS.length}
-              {isStepComplete(current.id, form) && (
+              {isStepComplete(current.id, form, placesReady) && (
                 <span className="step-complete-badge">Step Completed</span>
               )}
             </div>
@@ -427,6 +463,7 @@ export default function ProjectDraftModal({
                 set={set}
                 goTo={setStep}
                 missingOrg={showOrgError ? missingOrg : []}
+                onPlacesUnsupported={() => setPlacesReady(false)}
               />
             )}
           </div>
@@ -474,7 +511,12 @@ function SignupModal({ draft, onClose }) {
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
   const [error, setError] = useState('')
 
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  // Reaching the signup form is its own funnel stage: everyone here has an
+  // approved draft and is one form away from converting, so abandoning at this
+  // point means something different from abandoning during the conversation.
+  useEffect(() => { trackStage('signup') }, [])
+
+  const emailValid =/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
   // Not trimmed: leading/trailing spaces are legitimate password characters,
   // and silently stripping them would break the login they just set up.
   const passwordValid = password.length >= MIN_PASSWORD
@@ -490,15 +532,24 @@ function SignupModal({ draft, onClose }) {
     if (!valid || status === 'submitting') return
     setStatus('submitting')
     setError('')
+    // The funnel's finish line is pressing this button with a valid form —
+    // reported here, before the await, because what follows ends in a redirect
+    // away from the page and may resolve only after we have already left.
+    trackStage('completed')
     try {
-      const { aiDrafterToken } = await submitDraftSignup(email.trim(), draft, {
+      // The payload goes out immediately; the only thing we wait on is the
+      // duplicate-email verdict, which decides where they land. Anything else
+      // — slow workflow, network error — resolves to "proceed" (see
+      // submitDraftSignup), so this never blocks for longer than that check.
+      const { outcome } = submitDraftSignup(email.trim(), draft, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         organizationName: organizationName.trim(),
         password,
       })
+      const verdict = await outcome
       setStatus('done')
-      const url = loginUrlForToken(aiDrafterToken)
+      const url = verdict === SIGNUP_DUPLICATE ? LOGIN_URL : REDIRECT_URL
       if (window.self !== window.top) {
         // Running inside an iframe (the AI Drafter is embedded in the Bubble
         // app). Navigate the WHOLE tab, not just the frame. For a normal
@@ -662,10 +713,12 @@ function SignupModal({ draft, onClose }) {
 // --- Review (Step 7) summary, with editable extras ------------------------
 // `missingOrg` carries the labels of blank required org fields, but only once
 // the user has tried to submit — an empty array means "say nothing yet".
-function ReviewStep({ form, set, goTo, missingOrg = [] }) {
+function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
   const org = form.orgProfile
   const adv = form.advancedTerms
-  const flagged = (label) => missingOrg.includes(label)
+  const flagged = (label) => missingOrg.some((p) => p.label === label)
+  const empties = missingOrg.filter((p) => p.reason === 'empty').map((p) => p.label)
+  const unverifiedLocation = missingOrg.some((p) => p.reason === 'unverified')
   return (
     <Section title="Review" sub="Review your project details and submit when you're ready.">
       <div className="org-head">
@@ -681,12 +734,30 @@ function ReviewStep({ form, set, goTo, missingOrg = [] }) {
         <SelectChip label="Type" value={org.type} options={ORG_TYPES} invalid={flagged('Type')} onChange={(v) => set('orgProfile.type', v)} />
         <SelectChip label="Size" value={org.size} options={ORG_SIZES} invalid={flagged('Size')} onChange={(v) => set('orgProfile.size', v)} />
         <EditChip label="Industry" value={org.industry} invalid={flagged('Industry')} onChange={(v) => set('orgProfile.industry', v)} />
-        <EditChip label="Location" value={org.location} invalid={flagged('Location')} onChange={(v) => set('orgProfile.location', v)} />
+        <AddressChip
+          label="Location"
+          value={org.location}
+          // Verified means "this exact string is one Google returned" — editing
+          // a single character of a picked address makes it unverified again.
+          verified={Boolean(org.location) && org.location === org.locationVerified}
+          invalid={flagged('Location')}
+          onChange={(v, isVerified) => {
+            set('orgProfile.location', v)
+            set('orgProfile.locationVerified', isVerified ? v : '')
+          }}
+          onUnsupported={onPlacesUnsupported}
+        />
       </div>
-      {missingOrg.length > 0 && (
+      {empties.length > 0 && (
         <p className="field-error">
           ⚠️ Please complete your organization profile before submitting —{' '}
-          {missingOrg.join(', ')} {missingOrg.length === 1 ? 'is' : 'are'} still empty.
+          {empties.join(', ')} {empties.length === 1 ? 'is' : 'are'} still empty.
+        </p>
+      )}
+      {unverifiedLocation && (
+        <p className="field-error">
+          ⚠️ Location must be a real address — pick one from the suggestions as you
+          type. Answers like “remote”, “worldwide” or “N/A” can't be accepted.
         </p>
       )}
 
@@ -1124,6 +1195,165 @@ function EditChip({ label, value, invalid, onChange }) {
   )
 }
 
+// How long the field stays quiet after a keystroke before asking Google. Each
+// lookup is a billed request, so this is a cost control as much as a UX one:
+// typing "London" fires once, not six times.
+const ADDRESS_DEBOUNCE_MS = 300
+
+// Like EditChip, but for a geographic address: typing suggests real places
+// (street addresses, cities, regions — never businesses) from the Google Places
+// API, proxied through /api/places so the key stays server-side.
+//
+// Typing is search, not entry: `onChange(value, verified)` reports whether what
+// the field holds came from Google. Only a picked suggestion is verified, and
+// only a verified value passes validation — so "remote" or "N/A" can be typed
+// but never submitted. If no Maps key is configured the field degrades to the
+// plain text input it was before, and the caller relaxes the rule to match.
+function AddressChip({ label, value, invalid, verified, onChange, onUnsupported }) {
+  const [items, setItems] = useState([])
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(-1)
+  // Flipped off for good the first time the server says it has no Maps key,
+  // so an unconfigured deployment makes one lookup, not one per keystroke.
+  const [supported, setSupported] = useState(true)
+  // Only what the USER typed is looked up. Without this, a draft that arrives
+  // with a location already filled would open a menu the moment it renders.
+  const typedRef = useRef(false)
+  const boxRef = useRef(null)
+
+  useEffect(() => {
+    if (!supported || !typedRef.current) return
+    const q = String(value || '').trim()
+    if (q.length < MIN_PLACE_QUERY) {
+      setItems([])
+      setOpen(false)
+      return
+    }
+
+    let cancelled = false
+    const ctrl = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const { suggestions, configured } = await fetchPlaceSuggestions(q, { signal: ctrl.signal })
+        if (cancelled) return
+        if (!configured) {
+          setSupported(false)
+          setItems([])
+          // Tell the wizard too: with no working key there is no dropdown to
+          // pick from, so it must stop demanding a verified value.
+          onUnsupported?.()
+          return
+        }
+        setItems(suggestions)
+        setActive(-1)
+        setOpen(suggestions.length > 0)
+      } catch {
+        // Aborted by a newer keystroke — the next run owns the menu.
+      }
+    }, ADDRESS_DEBOUNCE_MS)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      ctrl.abort()
+    }
+  }, [value, supported])
+
+  // Close the menu when clicking outside the chip.
+  useEffect(() => {
+    function onDoc(e) {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  function pick(s) {
+    // Picking is not typing: clear the flag first so the value change below
+    // doesn't immediately look the chosen address up again.
+    typedRef.current = false
+    onChange(s.value, true)
+    setItems([])
+    setOpen(false)
+    setActive(-1)
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Escape') return setOpen(false)
+    if (!open || items.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActive((i) => (i + 1) % items.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActive((i) => (i <= 0 ? items.length - 1 : i - 1))
+    } else if (e.key === 'Enter') {
+      // Enter only commits a highlighted suggestion — otherwise it stays free
+      // text, and the form's own Enter handling is left alone.
+      if (active >= 0) {
+        e.preventDefault()
+        pick(items[active])
+      }
+    }
+  }
+
+  const listId = `addr-menu-${label.toLowerCase()}`
+  return (
+    <div className={`chip chip-address ${invalid ? 'is-invalid' : ''}`} ref={boxRef}>
+      <span className="chip-label">
+        {label}
+        {verified && (
+          <span className="chip-verified" role="img" aria-label="Address confirmed">✓</span>
+        )}
+      </span>
+      <input
+        className="chip-input"
+        value={value || ''}
+        // Browsers autofill saved addresses over a field named like this one;
+        // "off" keeps the Google menu the only dropdown on screen.
+        autoComplete="off"
+        placeholder={supported ? 'Start typing an address…' : ''}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
+        onChange={(e) => {
+          typedRef.current = true
+          // Typed text is unverified by definition. Without a working key
+          // there is nothing to verify against, so it counts as entered.
+          onChange(e.target.value, !supported)
+        }}
+        onFocus={() => { if (items.length) setOpen(true) }}
+        onKeyDown={onKeyDown}
+      />
+      {open && items.length > 0 && (
+        <ul className="ms-menu chip-menu" id={listId} role="listbox">
+          {items.map((s, i) => (
+            <li key={s.id || s.value} role="presentation">
+              <button
+                type="button"
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                className={`ms-option addr-option ${i === active ? 'is-active' : ''}`}
+                // Keep focus in the input so the blur/outside-click handlers
+                // don't close the menu before the click lands.
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(s)}
+              >
+                <span className="addr-main">{s.main}</span>
+                {s.secondary && <span className="addr-sub">{s.secondary}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // Like EditChip, but the value is picked from a fixed list. Only the predefined
 // options are offered — an off-list value is never added to the dropdown. When
 // nothing is selected it shows a "Select…" prompt rather than defaulting to the
@@ -1194,7 +1424,7 @@ function Paragraphs({ text }) {
 
 // Whether a step's mandatory inputs are all filled. Mirrors the `required`
 // fields in each step's markup — keep the two in sync.
-function isStepComplete(id, form) {
+function isStepComplete(id, form, placesReady = true) {
   switch (id) {
     case 'title':
       return Boolean(form.title?.trim())
@@ -1217,7 +1447,7 @@ function isStepComplete(id, form) {
     case 'review':
       // Review is only complete once the org profile is, since that block is
       // the one thing on this step the user still has to supply.
-      return missingOrgFields(form).length === 0
+      return missingOrgFields(form, placesReady).length === 0
     default:
       return false
   }
@@ -1227,7 +1457,7 @@ function isStepComplete(id, form) {
 // they are what gets shared, anonymized, on the project request, so a blank one
 // ships an incomplete brief to matched teams. The AI is told never to invent
 // these, so an unanswered field genuinely arrives empty and must be filled by
-// hand. Returns the labels of whichever are still blank, in display order.
+// hand.
 const ORG_FIELDS = [
   ['type', 'Type'],
   ['size', 'Size'],
@@ -1235,10 +1465,33 @@ const ORG_FIELDS = [
   ['location', 'Location'],
 ]
 
-function missingOrgFields(form) {
-  return ORG_FIELDS
-    .filter(([key]) => !String(form?.orgProfile?.[key] ?? '').trim())
-    .map(([, label]) => label)
+// Returns a problem per unusable field, in display order:
+//   { key, label, reason: 'empty' | 'unverified' }
+//
+// Location is held to a higher bar than the rest. It is a geographic address,
+// so "remote", "worldwide" or "N/A" are not answers to it — the value must be
+// one Google Places confirmed, which `orgProfile.locationVerified` records.
+// The AI path sets that server-side after resolving; the user path sets it by
+// picking from the dropdown. Any other text leaves the two out of step and the
+// field unusable, which is the point: there is no way to hand-type your way
+// past it.
+//
+// `placesReady` is the escape hatch. With no Maps key (or a broken one) there
+// is no dropdown to pick from, so demanding a verified value would make the
+// form permanently unsubmittable. In that state Location falls back to
+// "non-empty", exactly as it behaved before autocomplete existed.
+function missingOrgFields(form, placesReady = true) {
+  const org = form?.orgProfile || {}
+  const problems = []
+  for (const [key, label] of ORG_FIELDS) {
+    const value = String(org[key] ?? '').trim()
+    if (!value) {
+      problems.push({ key, label, reason: 'empty' })
+    } else if (key === 'location' && placesReady && value !== String(org.locationVerified ?? '').trim()) {
+      problems.push({ key, label, reason: 'unverified' })
+    }
+  }
+  return problems
 }
 
 function costRange(budget) {
@@ -1300,6 +1553,10 @@ function normalize(d = {}) {
     existingAssets: d.existingAssets || '',
     orgProfile: {
       industry: '', location: '',
+      // Set by the server when it resolved the AI's location against Google,
+      // or by the Location chip when the user picks a suggestion. Location
+      // only counts as answered while these two match — see missingOrgFields.
+      locationVerified: '',
       ...(d.orgProfile || {}),
       // Type & Size are fixed dropdowns — drop any AI value that's off-list.
       type: ORG_TYPES.includes(d.orgProfile?.type) ? d.orgProfile.type : '',

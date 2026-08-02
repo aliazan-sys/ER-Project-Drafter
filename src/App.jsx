@@ -4,17 +4,20 @@ import GuidedDrafter from './components/GuidedDrafter.jsx'
 import ChatAgent from './components/ChatAgent.jsx'
 import HistoryPage from './components/HistoryPage.jsx'
 import DraftPage from './components/DraftPage.jsx'
+import FunnelPage from './components/FunnelPage.jsx'
 
 // Tiny hash router so each experience has a shareable link:
 //   #/         → Guided Drafter (the original fixed-question flow)
 //   #/chat     → AI Chatbot (free-form conversation)
 //   #/draft    → Project Drafter (ChatGPT-style: sidebar history + chat)
 //   #/history  → Saved Projects (conversations + drafts)
+//   #/funnel   → Funnel (how far people get in the drafter)
 function routeFromHash() {
   const r = window.location.hash.replace(/^#\/?/, '')
   if (r === 'chat') return 'chat'
   if (r === 'draft') return 'draft'
   if (r === 'history') return 'history'
+  if (r === 'funnel') return 'funnel'
   return 'home'
 }
 
@@ -86,6 +89,7 @@ export default function App() {
 
       {route === 'chat' && <ChatAgent key="chat" />}
       {route === 'history' && <HistoryPage key="history" />}
+      {route === 'funnel' && <FunnelPage key="funnel" />}
       {route === 'home' && <GuidedDrafter key="home" />}
     </div>
   )
@@ -113,6 +117,9 @@ function Navbar({ route }) {
         </a>
         <a href="#/history" className={`nav-link ${route === 'history' ? 'active' : ''}`}>
           Saved Projects
+        </a>
+        <a href="#/funnel" className={`nav-link ${route === 'funnel' ? 'active' : ''}`}>
+          Funnel
         </a>
       </div>
     </nav>

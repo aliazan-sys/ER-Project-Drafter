@@ -5,7 +5,7 @@ import { CATEGORIES } from '../../shared/categories.js'
 
 // Stable anonymous identity — generated once, persisted in localStorage.
 // Lets the server filter history to this browser without requiring an account.
-function getVisitorId() {
+export function getVisitorId() {
   const KEY = 'er_visitor_id'
   let id = localStorage.getItem(KEY)
   if (!id) {
@@ -71,6 +71,56 @@ export async function getConversation(id) {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
   return data.conversation
+}
+
+// Funnel numbers: one row of totals for the drafter funnel. Counts come back
+// from Postgres as strings (bigint), so they are coerced here — every caller
+// wants numbers.
+export async function getFunnelSummary() {
+  const res = await fetch('/api/funnel')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  const s = data.summary || {}
+  return {
+    conversationsStarted: Number(s.conversations_started || 0),
+    leftInConversation: Number(s.left_in_conversation || 0),
+    leftInReview: Number(s.left_in_review || 0),
+    leftInSignup: Number(s.left_in_signup || 0),
+    completed: Number(s.completed || 0),
+    uniqueVisitors: Number(s.unique_visitors || 0),
+  }
+}
+
+// Geographic autocomplete for the organisation's Location. Goes through our
+// own proxy (/api/places), so the Google Maps key stays server-side.
+//
+// Returns { suggestions, configured }. `configured: false` means no Maps key is
+// set on the server — the caller should fall back to plain text rather than
+// showing an error, and stop asking. Anything that actually fails resolves the
+// same way: an address field that still accepts typing beats one that shouts.
+export const MIN_PLACE_QUERY = 3
+
+export async function fetchPlaceSuggestions(query, { signal } = {}) {
+  const q = String(query ?? '').trim()
+  if (q.length < MIN_PLACE_QUERY) return { suggestions: [], configured: true }
+  try {
+    const res = await fetch(`/api/places?q=${encodeURIComponent(q)}`, { signal })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      // 400/403 is a key or project problem (invalid key, Places API not
+      // enabled) — permanent until someone fixes the config, so report it as
+      // "not configured" and let the caller stop asking. Other failures are
+      // treated as transient.
+      const permanent = res.status === 400 || res.status === 403
+      return { suggestions: [], configured: !permanent, error: data.error || 'Lookup failed' }
+    }
+    return { suggestions: data.suggestions || [], configured: data.configured !== false }
+  } catch (err) {
+    // An aborted request is a superseded keystroke, not a failure — let the
+    // caller ignore it rather than clearing the menu it is about to refill.
+    if (err?.name === 'AbortError') throw err
+    return { suggestions: [], configured: true, error: 'Lookup failed' }
+  }
 }
 
 // Sign-up handoff: create the user and save their drafted project in the
@@ -168,14 +218,20 @@ export function formatDisplayDate(value) {
 
 // Where the user lands after signing up. The token we mint below is handed to
 // the web app so it can pick up the draft the webhook just created.
-const LOGIN_URL = 'https://app.equalreach.io/version-93726/login'
+// /redirect, not /login: the account already exists by this point, so the web
+// app resolves the token and drops them straight in rather than asking them to
+// authenticate against the credentials they just set.
+// `ai_redirect=yes` marks this as an arrival from the AI drafter, so the web
+// app sends them straight in instead of bouncing them to /login. No token
+// rides along — the app resolves the draft itself.
+export const REDIRECT_URL = 'https://app.equalreach.io/version-93726/redirect?ai_redirect=yes'
 
-export function loginUrlForToken(token) {
-  return `${LOGIN_URL}?ai_token=${encodeURIComponent(token)}`
-}
+// Where an existing account is sent instead: they authenticate normally.
+export const LOGIN_URL = 'https://app.equalreach.io/version-93726/login'
 
-// 32 hex chars of CSPRNG randomness — the shared handle between the webhook
-// payload and the login redirect.
+// 32 hex chars of CSPRNG randomness, sent to the workflow as
+// `ai_drafter_token`. No longer echoed in the redirect URL — the web app is
+// expected to resolve the draft itself.
 function generateDrafterToken() {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
@@ -188,6 +244,9 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
   const d = draft || {}
   const scope = d.scope || {}
   const budget = d.budget || {}
+  // Internal bookkeeping for the Location field's "must be a real address"
+  // check — it has done its job by now and is not part of the brief.
+  const { locationVerified, ...orgProfile } = d.orgProfile || {}
   return {
     email,
     ai_drafter_token: aiDrafterToken,
@@ -204,6 +263,7 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     password: contact.password || '',
     draft: {
       ...d,
+      orgProfile,
       // Enforced again at the boundary, not just in the form: whatever the
       // model or a stored draft supplied, only predefined categories leave the
       // browser. A category the user could not have selected must never reach
@@ -227,18 +287,82 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
   }
 }
 
-export async function submitDraftSignup(email, draft, contact = {}) {
+// `keepalive` caps the body at 64 KiB. A draft is a few KB, so this is headroom
+// rather than a real limit — but exceeding it makes fetch reject outright, so
+// fall back to a normal request rather than losing the submission entirely.
+const KEEPALIVE_MAX_BYTES = 64 * 1024
+
+// The two ways a signup can end, as far as the redirect is concerned.
+export const SIGNUP_DUPLICATE = 'duplicate' // account exists -> send to login
+export const SIGNUP_PROCEED = 'proceed'     // everything else -> send to redirect
+
+// How long we are willing to wait to learn whether the email was a duplicate.
+// The workflow is slow (a bare 404 from that app measured ~4s), so this is a
+// ceiling, not an expected wait: past it we stop listening and let them
+// through. We never abort the request itself — see below.
+const DUPLICATE_CHECK_TIMEOUT_MS = 8000
+
+// Bubble nests workflow errors as { statusCode, body: { status, message } },
+// so the message is NOT at the top level. Read both shapes.
+function errorMessageOf(data) {
+  return String(data?.body?.message || data?.message || data?.error || '')
+}
+
+// Duplicate-email detection is phrase-matched because the workflow reports it
+// as a plain message, not a distinguishable code. Kept deliberately broad —
+// Bubble's signup action has worded this several ways across versions. If the
+// workflow is ever changed to return a machine-readable flag, prefer that.
+function isDuplicateEmail(data) {
+  const msg = errorMessageOf(data).toLowerCase()
+  if (!msg) return false
+  return (
+    /already\s+(in\s+use|used|exists|taken|registered|have)/.test(msg) ||
+    /(email|account|user)\s+.*already/.test(msg) ||
+    /duplicate/.test(msg) ||
+    /not\s+unique/.test(msg)
+  )
+}
+
+function after(ms, value) {
+  return new Promise((resolve) => setTimeout(() => resolve(value), ms))
+}
+
+// Dispatches the signup and reports back ONLY whether the email was already
+// taken. Returns synchronously with the token plus an `outcome` promise the
+// caller awaits just long enough to pick a destination.
+//
+// Everything that is not a confirmed duplicate resolves to SIGNUP_PROCEED —
+// a network failure, an edge timeout, an unrelated workflow error. This is
+// deliberate: the duplicate check is the only gate, so anything ambiguous
+// lets the user through rather than stranding them on a login page for an
+// account that may not exist.
+//
+// `keepalive` matters here: on the timeout path we redirect while the request
+// is still in flight, and without it the browser may cancel it on navigation.
+export function submitDraftSignup(email, draft, contact = {}) {
   const aiDrafterToken = generateDrafterToken()
-  const res = await fetch(CREATE_USER_AND_DRAFT_URL, {
+  const body = JSON.stringify(buildSubmissionPayload(email, draft, contact, aiDrafterToken))
+
+  const request = fetch(CREATE_USER_AND_DRAFT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildSubmissionPayload(email, draft, contact, aiDrafterToken)),
+    body,
+    keepalive: new Blob([body]).size <= KEEPALIVE_MAX_BYTES,
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.message || data.error || `Request failed (${res.status})`)
-  }
-  return { data, aiDrafterToken }
+    .then(async (res) => {
+      if (res.ok) return SIGNUP_PROCEED
+      const data = await res.json().catch(() => ({}))
+      return isDuplicateEmail(data) ? SIGNUP_DUPLICATE : SIGNUP_PROCEED
+    })
+    .catch(() => SIGNUP_PROCEED)
+
+  // Race rather than abort: letting the timer win stops us WAITING, but the
+  // request keeps running so a slow workflow still creates the account.
+  const outcome = Promise.race([request, after(DUPLICATE_CHECK_TIMEOUT_MS, SIGNUP_PROCEED)])
+
+  // The token is still sent to the workflow in the payload, but the caller has
+  // no use for it now that the redirect carries no query string.
+  return { outcome }
 }
 
 export async function checkHealth() {

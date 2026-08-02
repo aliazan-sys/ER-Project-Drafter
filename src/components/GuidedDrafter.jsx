@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { QUESTIONS, INTRO_DONE_MESSAGE } from '../lib/questions.js'
 import { generateDraft } from '../lib/api.js'
-import ProjectDraftModal from './ProjectDraftModal.jsx'
+import { startConversation } from '../lib/tracking.js'
+import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 
 // The original guided experience: a fixed set of short questions, asked one at a
@@ -17,7 +18,7 @@ export default function GuidedDrafter() {
   const [modalOpen, setModalOpen] = useState(false)
   // Held out here so the preview modal resumes its position and keeps its
   // completed-step checkmarks after it's closed and reopened.
-  const [modalStep, setModalStep] = useState(0)
+  const [modalStep, setModalStep] = useState(REVIEW_STEP_INDEX)
   const [modalVisited, setModalVisited] = useState([])
   const [error, setError] = useState('')
 
@@ -34,6 +35,7 @@ export default function GuidedDrafter() {
     const value = input.trim()
     if (!value || status !== 'chatting' || isFinished) return
 
+    startConversation('guided')
     const question = QUESTIONS[step]
     const nextAnswers = { ...answers, [question.text]: value }
     const nextStep = step + 1

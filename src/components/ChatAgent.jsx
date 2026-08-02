@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendChat, generateDraftFromChat } from '../lib/api.js'
-import ProjectDraftModal from './ProjectDraftModal.jsx'
+import { startConversation, resetConversation } from '../lib/tracking.js'
+import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 
 const GREETING =
@@ -24,7 +25,7 @@ export default function ChatAgent({ onDraftSaved } = {}) {
   const [error, setError] = useState('')
   // Held out here (like the full drafter) so the wizard resumes its step and
   // keeps its completed-step checkmarks after the modal closes and reopens.
-  const [draftStep, setDraftStep] = useState(0)
+  const [draftStep, setDraftStep] = useState(REVIEW_STEP_INDEX)
   const [draftVisited, setDraftVisited] = useState([])
   // Tappable answers to the question the assistant just asked.
   const [suggestions, setSuggestions] = useState([])
@@ -86,6 +87,7 @@ export default function ChatAgent({ onDraftSaved } = {}) {
   // the panel on the er-expand message), exactly like the standalone app —
   // no redirect to a separate Webflow page.
   async function sendMessage(value) {
+    startConversation('chat')
     const convo = [...messages, { role: 'user', text: value }]
     setMessages(convo)
     setInput('')
@@ -122,6 +124,8 @@ export default function ChatAgent({ onDraftSaved } = {}) {
   }
 
   function restart() {
+    // A new conversation gets its own funnel session.
+    resetConversation()
     setMessages([{ role: 'bot', text: GREETING }])
     setInput('')
     setStatus('chatting')

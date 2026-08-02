@@ -1,6 +1,7 @@
 // Organization-profile pick-lists, shared by the client (the Review step's
 // Type/Size dropdowns) and the server (so the AI matches these exact values).
-// Type and Size are fixed lists; Industry and Location are free text.
+// Type and Size are fixed lists; Industry is free text; Location is a
+// geographic address, autocompleted from Google Places (see shared/places.js).
 export const ORG_TYPES = [
   'Startup',
   'Small-Medium Enterprise (SME)',

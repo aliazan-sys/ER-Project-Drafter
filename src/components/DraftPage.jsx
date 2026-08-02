@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendChat, generateDraftFromChat } from '../lib/api.js'
-import ProjectDraftModal from './ProjectDraftModal.jsx'
+import { startConversation, resetConversation } from '../lib/tracking.js'
+import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
 
@@ -20,6 +21,9 @@ export default function DraftPage() {
   const [chatKey, setChatKey] = useState(0)
 
   function startNewChat() {
+    // Close the funnel session first: the next conversation is a new one, and
+    // should be counted separately rather than extending the abandoned one.
+    resetConversation()
     setChatKey((k) => k + 1)
   }
 
@@ -39,8 +43,9 @@ function ChatPanel({ onNewChat }) {
   const [draft, setDraft] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   // Lives out here so closing and reopening the wizard resumes where they left
-  // off — the modal itself unmounts and would forget.
-  const [draftStep, setDraftStep] = useState(0)
+  // off — the modal itself unmounts and would forget. Starts on Review: the
+  // draft is already complete, so the first thing to do is check it over.
+  const [draftStep, setDraftStep] = useState(REVIEW_STEP_INDEX)
   // Same reason: completed-step checkmarks must survive the modal unmounting.
   const [draftVisited, setDraftVisited] = useState([])
   // True between "Refine with AI" and the redraft that answers it, so the next
@@ -72,9 +77,10 @@ function ChatPanel({ onNewChat }) {
     try {
       const { draft: result } = await generateDraftFromChat(convo)
       setDraft(result)
-      // Fresh content — the old position no longer means anything, so start at
-      // Title. Every new draft (first pass or a refine) lands here.
-      setDraftStep(0)
+      // Fresh content — the old position no longer means anything, so open on
+      // Review. Every new draft (first pass or a refine) lands there, with the
+      // earlier steps already ticked off.
+      setDraftStep(REVIEW_STEP_INDEX)
       setDraftVisited([])
       setStatus('done')
       setModalOpen(true)
@@ -97,6 +103,9 @@ function ChatPanel({ onNewChat }) {
   }
 
   async function sendMessage(value) {
+    // First message of a conversation starts a funnel session; later calls
+    // are no-ops. Refining an existing draft therefore stays the same session.
+    startConversation('draft')
     const convo = [...messages, { role: 'user', text: value }]
     setMessages(convo)
     setInput('')

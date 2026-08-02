@@ -10,6 +10,7 @@
 import { TIMEZONES } from './timezones.js'
 import { ORG_TYPES, ORG_SIZES } from './orgProfile.js'
 import { CATEGORIES, MAX_CATEGORIES } from './categories.js'
+import { resolvePlace } from './places.js'
 
 // Provider selection: Gemini direct by default. Now that Gemini billing is
 // enabled we route through the Gemini API (no rate limiting). OpenRouter stays
@@ -147,7 +148,8 @@ ${CATEGORIES.map((c) => `    "${c}"`).join('\n')}
     * Only fill a field if the user actually described their organisation that way.
   - orgProfile.type: when explicitly stated, it MUST be exactly one of: ${ORG_TYPES.map((t) => `"${t}"`).join(', ')}. Pick the closest match; otherwise "".
   - orgProfile.size: when an employee count / size band is explicitly given, it MUST be exactly one of: ${ORG_SIZES.map((s) => `"${s}"`).join(', ')}; otherwise "".
-  - orgProfile.industry / orgProfile.location: free text ONLY if the user stated it, else "".
+  - orgProfile.industry: free text ONLY if the user stated it, else "".
+  - orgProfile.location: a GEOGRAPHIC PLACE ONLY if the user stated it, else "". Write it as a real address or place name that a maps service would recognise — "London, UK", "Nairobi, Kenya", "221B Baker Street, London, UK" — never a description like "remote", "across Europe" or "our head office".
 - screeningQuestions: 2-3 sharp questions to vet partners.
 - levelOfExperience: Entry / Intermediate / Expert.
 - advancedTerms.languages: e.g. ["English"].
@@ -404,6 +406,33 @@ export async function chatReply(messages) {
   })
 }
 
+// The Location chip is a geographic address field, so the value the AI infers
+// from the conversation has to clear the same bar as one the user picks from
+// the dropdown. Run it through Google Places on the way out: a real place is
+// rewritten to Google's canonical form ("london" -> "London, UK"), and
+// something that is not a place at all ("remote", "across Europe") is dropped
+// so the user fills it in properly rather than submitting prose as an address.
+//
+// Best-effort by design — see resolvePlace(): with no Maps key, or if the
+// lookup fails, the model's original text is passed through untouched.
+async function withResolvedLocation(draft) {
+  const location = draft?.orgProfile?.location
+  if (!location) return draft
+  const { value, resolved } = await resolvePlace(location)
+  return {
+    ...draft,
+    orgProfile: {
+      ...draft.orgProfile,
+      location: value,
+      // Marks the value as one Google confirmed, which is what the Review
+      // step's validation requires. Only a genuine resolution earns it: a
+      // pass-through (no key / lookup failed) leaves it unset, so the user is
+      // asked to pick the address themselves.
+      locationVerified: resolved ? value : '',
+    },
+  }
+}
+
 // Turns the user's intake answers into a full project draft object.
 // Throws GeminiError(status, message, detail) on any failure.
 export async function generateDraft(answers) {
@@ -418,11 +447,13 @@ export async function generateDraft(answers) {
       .join('\n\n') +
     '\n\nDraft the full EqualReach project request now.'
 
-  return callModel({
-    systemText: buildSystemInstruction(today()),
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    schema: responseSchema,
-  })
+  return withResolvedLocation(
+    await callModel({
+      systemText: buildSystemInstruction(today()),
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      schema: responseSchema,
+    }),
+  )
 }
 
 // Turns a free-form chatbot conversation into a full project draft object.
@@ -441,9 +472,11 @@ export async function generateDraftFromConversation(messages) {
     transcript +
     '\n\nBased on this whole conversation, draft the full EqualReach project request now.'
 
-  return callModel({
-    systemText: buildSystemInstruction(today()),
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    schema: responseSchema,
-  })
+  return withResolvedLocation(
+    await callModel({
+      systemText: buildSystemInstruction(today()),
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      schema: responseSchema,
+    }),
+  )
 }

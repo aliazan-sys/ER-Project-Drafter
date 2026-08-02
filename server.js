@@ -23,7 +23,10 @@ import {
   answersToMessages,
   listConversations,
   getConversation,
+  recordStage,
+  funnelSummary,
 } from './shared/store.js'
+import { suggestPlaces, hasPlacesKey, PlacesError } from './shared/places.js'
 
 const app = express()
 app.use(cors())
@@ -32,7 +35,12 @@ app.use(express.json({ limit: '1mb' }))
 const PORT = process.env.PORT || 3001
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, model: MODEL, keyConfigured: hasApiKey() })
+  res.json({
+    ok: true,
+    model: MODEL,
+    keyConfigured: hasApiKey(),
+    placesConfigured: hasPlacesKey(),
+  })
 })
 
 // One conversational turn for the chatbot page.
@@ -74,6 +82,41 @@ app.post('/api/draft', async (req, res) => {
   }
 })
 
+// Geographic autocomplete for the Review step's Location chip. Mirrors
+// api/places.js — both go through shared/places.js so the Maps key is only
+// ever read server-side.
+app.get('/api/places', async (req, res) => {
+  try {
+    res.json(await suggestPlaces(req.query.q))
+  } catch (err) {
+    console.error('[/api/places] error:', err)
+    if (err instanceof PlacesError) {
+      return res.status(err.status).json({ error: err.message, detail: err.detail })
+    }
+    res.status(500).json({ error: 'Unexpected server error.', detail: String(err) })
+  }
+})
+
+// Funnel tracking: how far each conversation got. Always 200 — a tracking
+// failure must never show up in the UI. Mirrors api/track.js.
+app.post('/api/track', async (req, res) => {
+  const { sessionId, stage, mode } = req.body || {}
+  const recorded = await recordStage({
+    sessionId,
+    stage,
+    mode,
+    visitorId: req.get('X-Visitor-ID') || null,
+  })
+  res.json({ recorded })
+})
+
+// The funnel numbers in one row. Mirrors api/funnel.js.
+app.get('/api/funnel', async (_req, res) => {
+  const summary = await funnelSummary()
+  if (!summary) return res.status(503).json({ error: 'Tracking storage is not configured.' })
+  res.json({ summary })
+})
+
 // History: list all saved conversations, or fetch one (with transcript + draft).
 app.get('/api/conversations', async (req, res) => {
   try {
@@ -93,8 +136,14 @@ const httpServer = app.listen(PORT, () => {
   console.log(`  Model: ${MODEL}`)
   console.log(
     hasApiKey()
-      ? '  Gemini API key: loaded from .env ✓\n'
-      : '  Gemini API key: NOT SET — copy .env.example to .env and add it.\n'
+      ? '  Gemini API key: loaded from .env ✓'
+      : '  Gemini API key: NOT SET — copy .env.example to .env and add it.'
+  )
+  // Optional: without it the Location field is still usable, just free text.
+  console.log(
+    hasPlacesKey()
+      ? '  Google Maps API key: loaded from .env ✓\n'
+      : '  Google Maps API key: NOT SET — Location autocomplete is off (plain text still works).\n'
   )
 })
 

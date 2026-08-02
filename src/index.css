@@ -405,6 +405,172 @@ body {
   }
 }
 
+/* ---------- Funnel ----------
+   Bars carry the only colour on the page (an ordinal teal ramp, set inline per
+   stage in FunnelPage.jsx). Every label, value and percentage stays in the
+   text tokens — a data hue used as text is unreadable at small sizes. */
+.funnel-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+}
+
+/* Headline numbers. auto-fit so four tiles wrap to two rows on narrow screens
+   rather than crushing the values. */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.kpi {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kpi-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* Proportional figures, not tabular: these are standalone display numbers, and
+   tabular digits read loose at this size. */
+.kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.funnel-bars {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.funnel-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.funnel-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.funnel-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.funnel-share {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  /* Aligns the percentages down the right edge across rows. */
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
+
+.funnel-track {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+/* Rounded data-end only, so the bar stays anchored to its baseline at 0. */
+.funnel-fill {
+  height: 100%;
+  min-width: 3px;
+  border-radius: 0 4px 4px 0;
+  transition: width 240ms ease;
+}
+
+.funnel-tip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: 8px;
+  max-width: min(320px, 80vw);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.funnel-track:hover .funnel-tip,
+.funnel-row:focus-within .funnel-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.funnel-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.funnel-table th,
+.funnel-table td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.funnel-table thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.funnel-table tbody th {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* A column of numbers — here tabular figures are the right call. */
+.funnel-table td {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel-table tbody tr:last-child th,
+.funnel-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* ---------- History / Saved Projects ---------- */
 .history-list {
   display: flex;
@@ -1728,6 +1894,65 @@ body {
 /* Unfilled dropdown shows a muted "Select…" prompt, not a real value */
 .chip-select.is-empty {
   color: var(--muted);
+}
+
+.chip-input::placeholder {
+  color: var(--muted);
+  /* The hint should not compete with a real value in a neighbouring chip. */
+  font-size: 12px;
+}
+
+/* Location chip: anchors the Google Places suggestion menu */
+.chip-address {
+  position: relative;
+}
+
+/* Quiet confirmation that the address is one Google returned — the field is
+   only submittable in this state, so its absence is the real signal. */
+.chip-verified {
+  margin-left: 5px;
+  color: var(--teal);
+  font-weight: 700;
+}
+
+/* The chip is a quarter of the row — too narrow for a full address, so the
+   menu is allowed to grow past it. It grows LEFTWARDS (pinned to the chip's
+   right edge) because Location is the last chip in the row: growing right
+   would push it off the modal. */
+.chip-menu {
+  left: auto;
+  right: 0;
+  min-width: 260px;
+  max-width: min(420px, 78vw);
+}
+
+.addr-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+/* Keyboard highlight matches the hover state so arrowing and pointing look
+   the same. */
+.addr-option.is-active {
+  background: rgba(21, 151, 165, 0.1);
+  color: var(--teal-dark);
+}
+
+.addr-main {
+  font-size: 14px;
+}
+
+.addr-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.addr-option:hover .addr-sub,
+.addr-option.is-active .addr-sub {
+  color: var(--teal-dark);
+  opacity: 0.75;
 }
 
 /* "Your Organization Profile Summary" heading + info badge */

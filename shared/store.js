@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import pg from 'pg'
+import { isFunnelStage, stageRank } from './funnel.js'
 
 const { Pool } = pg
 
@@ -65,6 +66,93 @@ function ensureSchema() {
       })
   }
   return _schemaReady
+}
+
+// Funnel schema, kept deliberately separate from ensureSchema() above:
+// analytics must never be able to break drafting or history. If this fails,
+// only recordStage() is affected.
+//
+// `funnel_summary` is a one-row view so the numbers can be read straight from
+// the Supabase table editor without writing SQL.
+let _funnelReady
+function ensureFunnelSchema() {
+  if (!_funnelReady) {
+    _funnelReady = pool()
+      .query(`
+        CREATE TABLE IF NOT EXISTS funnel_sessions (
+          id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          session_id   text UNIQUE NOT NULL,
+          visitor_id   text,
+          mode         text,
+          stage        text NOT NULL,
+          stage_rank   int  NOT NULL,
+          started_at   timestamptz NOT NULL DEFAULT now(),
+          updated_at   timestamptz NOT NULL DEFAULT now(),
+          completed_at timestamptz
+        );
+        CREATE INDEX IF NOT EXISTS funnel_sessions_stage_idx ON funnel_sessions(stage);
+        CREATE INDEX IF NOT EXISTS funnel_sessions_visitor_idx ON funnel_sessions(visitor_id);
+        CREATE OR REPLACE VIEW funnel_summary AS
+          SELECT
+            count(*)                                        AS conversations_started,
+            count(*) FILTER (WHERE stage = 'conversation')  AS left_in_conversation,
+            count(*) FILTER (WHERE stage = 'review')        AS left_in_review,
+            count(*) FILTER (WHERE stage = 'signup')        AS left_in_signup,
+            count(*) FILTER (WHERE stage = 'completed')     AS completed,
+            count(DISTINCT visitor_id)                      AS unique_visitors
+          FROM funnel_sessions;
+      `)
+      .catch((err) => {
+        _funnelReady = undefined
+        throw err
+      })
+  }
+  return _funnelReady
+}
+
+// Records how far one conversation got. Called repeatedly for the same
+// session_id as the user advances; the row keeps the FURTHEST stage, so an
+// out-of-order or replayed report can never walk the funnel backwards.
+//
+// Best-effort like everything else here: a tracking failure is logged and
+// swallowed, never surfaced to the user.
+export async function recordStage({ sessionId, stage, mode, visitorId }) {
+  if (!isConfigured() || !sessionId || !isFunnelStage(stage)) return false
+  try {
+    await ensureFunnelSchema()
+    await pool().query(
+      `INSERT INTO funnel_sessions (session_id, visitor_id, mode, stage, stage_rank, completed_at)
+       VALUES ($1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END)
+       ON CONFLICT (session_id) DO UPDATE SET
+         stage = CASE WHEN EXCLUDED.stage_rank > funnel_sessions.stage_rank
+                      THEN EXCLUDED.stage ELSE funnel_sessions.stage END,
+         stage_rank = GREATEST(funnel_sessions.stage_rank, EXCLUDED.stage_rank),
+         -- First writer wins for identity, so a later report with a missing
+         -- header cannot blank out what we already know.
+         visitor_id = COALESCE(funnel_sessions.visitor_id, EXCLUDED.visitor_id),
+         mode = COALESCE(funnel_sessions.mode, EXCLUDED.mode),
+         completed_at = COALESCE(funnel_sessions.completed_at, EXCLUDED.completed_at),
+         updated_at = now()`,
+      [sessionId, visitorId || null, mode || null, stage, stageRank(stage)]
+    )
+    return true
+  } catch (err) {
+    console.error('[store] recordStage failed:', err.message)
+    return false
+  }
+}
+
+// The one-row funnel summary, for /api/funnel. Null when unavailable.
+export async function funnelSummary() {
+  if (!isConfigured()) return null
+  try {
+    await ensureFunnelSchema()
+    const { rows } = await pool().query('SELECT * FROM funnel_summary')
+    return rows[0] || null
+  } catch (err) {
+    console.error('[store] funnelSummary failed:', err.message)
+    return null
+  }
 }
 
 // Normalises the guided form's { question: answer } map into the same
