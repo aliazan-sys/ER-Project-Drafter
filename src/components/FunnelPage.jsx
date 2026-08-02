@@ -88,7 +88,7 @@ export default function FunnelPage() {
       <header className="topbar">
         <div className="page-head">
           <div className="page-title">Funnel</div>
-          <div className="page-sub">How far people get in the AI drafter</div>
+          <div className="page-sub">How far people get in the AI drafter · live traffic only</div>
         </div>
         <button className="reopen" onClick={() => load(true)} disabled={status === 'loading'}>
           {status === 'loading' ? 'Loading…' : '↻ Refresh'}
@@ -113,8 +113,9 @@ export default function FunnelPage() {
             <div className="history-empty">
               <p className="strong">No conversations tracked yet.</p>
               <p className="muted">
-                A row is recorded the moment someone sends their first message to the drafter.
-                Start one and refresh this page.
+                Only traffic on the live site is counted — conversations on localhost and preview
+                deploys are deliberately not recorded, so this stays empty until a real visitor
+                starts a draft.
               </p>
             </div>
           )}

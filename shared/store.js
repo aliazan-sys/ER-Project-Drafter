@@ -68,12 +68,27 @@ function ensureSchema() {
   return _schemaReady
 }
 
+// The funnel counts LIVE traffic only. Vercel sets VERCEL_ENV to
+// 'production' | 'preview' | 'development'; locally it is unset. So anything
+// that is not exactly 'production' — a dev server on localhost, a preview
+// deploy, a smoke test — is not a real user and must not reach the numbers.
+//
+// FUNNEL_TRACK_ALL=1 overrides this for testing the pipeline itself. Leave it
+// unset everywhere that matters.
+const isLiveEnvironment = () =>
+  process.env.FUNNEL_TRACK_ALL === '1' || process.env.VERCEL_ENV === 'production'
+
+const currentEnvironment = () =>
+  process.env.VERCEL_ENV || (process.env.FUNNEL_TRACK_ALL === '1' ? 'forced' : 'development')
+
 // Funnel schema, kept deliberately separate from ensureSchema() above:
 // analytics must never be able to break drafting or history. If this fails,
 // only recordStage() is affected.
 //
 // `funnel_summary` is a one-row view so the numbers can be read straight from
-// the Supabase table editor without writing SQL.
+// the Supabase table editor without writing SQL. It filters to production, so
+// anything recorded before this column existed — all of it local testing —
+// drops out of the totals via the column default rather than being deleted.
 let _funnelReady
 function ensureFunnelSchema() {
   if (!_funnelReady) {
@@ -90,8 +105,13 @@ function ensureFunnelSchema() {
           updated_at   timestamptz NOT NULL DEFAULT now(),
           completed_at timestamptz
         );
+        -- Backfills every pre-existing row as 'development', which is what
+        -- they were: local testing against this same database.
+        ALTER TABLE funnel_sessions
+          ADD COLUMN IF NOT EXISTS environment text NOT NULL DEFAULT 'development';
         CREATE INDEX IF NOT EXISTS funnel_sessions_stage_idx ON funnel_sessions(stage);
         CREATE INDEX IF NOT EXISTS funnel_sessions_visitor_idx ON funnel_sessions(visitor_id);
+        CREATE INDEX IF NOT EXISTS funnel_sessions_env_idx ON funnel_sessions(environment);
         CREATE OR REPLACE VIEW funnel_summary AS
           SELECT
             count(*)                                        AS conversations_started,
@@ -100,7 +120,8 @@ function ensureFunnelSchema() {
             count(*) FILTER (WHERE stage = 'signup')        AS left_in_signup,
             count(*) FILTER (WHERE stage = 'completed')     AS completed,
             count(DISTINCT visitor_id)                      AS unique_visitors
-          FROM funnel_sessions;
+          FROM funnel_sessions
+          WHERE environment = 'production';
       `)
       .catch((err) => {
         _funnelReady = undefined
@@ -118,11 +139,14 @@ function ensureFunnelSchema() {
 // swallowed, never surfaced to the user.
 export async function recordStage({ sessionId, stage, mode, visitorId }) {
   if (!isConfigured() || !sessionId || !isFunnelStage(stage)) return false
+  // Localhost and preview deploys write nothing at all, so the table holds
+  // only real traffic — not just the summary.
+  if (!isLiveEnvironment()) return false
   try {
     await ensureFunnelSchema()
     await pool().query(
-      `INSERT INTO funnel_sessions (session_id, visitor_id, mode, stage, stage_rank, completed_at)
-       VALUES ($1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END)
+      `INSERT INTO funnel_sessions (session_id, visitor_id, mode, stage, stage_rank, completed_at, environment)
+       VALUES ($1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END, $6)
        ON CONFLICT (session_id) DO UPDATE SET
          stage = CASE WHEN EXCLUDED.stage_rank > funnel_sessions.stage_rank
                       THEN EXCLUDED.stage ELSE funnel_sessions.stage END,
@@ -133,7 +157,7 @@ export async function recordStage({ sessionId, stage, mode, visitorId }) {
          mode = COALESCE(funnel_sessions.mode, EXCLUDED.mode),
          completed_at = COALESCE(funnel_sessions.completed_at, EXCLUDED.completed_at),
          updated_at = now()`,
-      [sessionId, visitorId || null, mode || null, stage, stageRank(stage)]
+      [sessionId, visitorId || null, mode || null, stage, stageRank(stage), currentEnvironment()]
     )
     return true
   } catch (err) {
