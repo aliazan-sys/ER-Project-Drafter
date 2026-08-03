@@ -327,6 +327,148 @@ function after(ms, value) {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms))
 }
 
+// --- Post-signup login ------------------------------------------------------
+// After the account exists, we log the user in and let the web app tell us
+// where to send them: this workflow answers with the destination URL, already
+// carrying whatever session it wants to hand over. We never construct that URL
+// ourselves.
+const LOGIN_WORKFLOW_URL =
+  'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf/log-in'
+
+// Same ceiling as the duplicate check. Past it we stop waiting and fall back to
+// the plain redirect — the account and draft already exist by then, so the
+// worst case is the user signing in by hand, not losing their work.
+const LOGIN_TIMEOUT_MS = 8000
+
+// Only absolute http(s) URLs are accepted as a destination. This is what stops
+// a malformed or hostile value ("javascript:…") from being handed to the
+// browser as a navigation target. The host is deliberately NOT restricted —
+// the web app is free to point at whatever domain it likes.
+function asHttpUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+// The workflow answers:
+//   { status: "success",
+//     response: { redirect_link, token, user_id, expires } }
+// `redirect_link` is a one-shot /api/1.1/login-link?key=… URL that establishes
+// the session and forwards into the app, so we hand the browser that and let
+// the web app decide where the user ends up.
+//
+// The alternate keys and the URL-shaped scan below are belt-and-braces: if the
+// workflow is ever reworded, the redirect keeps working instead of silently
+// falling back to the signed-out page.
+function extractRedirect(data) {
+  const fields = { ...(data || {}), ...(data?.response || {}) }
+  const named = ['redirect_link', 'redirect', 'redirect_url', 'redirectUrl', 'url', 'link', 'login_url']
+  for (const key of named) {
+    const url = asHttpUrl(fields[key])
+    if (url) return url
+  }
+  for (const value of Object.values(fields)) {
+    const url = asHttpUrl(value)
+    if (url) return url
+  }
+  return null
+}
+
+// Bubble reports a bad login as HTTP 400 with reason INVALID_LOGIN_CREDENTIALS.
+// Here that CANNOT mean a wrong password: we are logging in with the exact
+// credentials the create-user webhook was just given. It can only mean the
+// account does not exist yet — the webhook creates it as its first action, but
+// we may still have got there first. So this is a "not ready" signal to wait
+// on, not a rejection, and it is the one error worth retrying.
+function isAccountNotReady(status, data) {
+  return status === 400 && String(data?.reason || '') === 'INVALID_LOGIN_CREDENTIALS'
+}
+
+// Backoff between attempts, in ms. Short at first because the account is
+// created as the webhook's FIRST action and should appear almost immediately,
+// then widening so a genuinely slow workflow still gets caught without
+// hammering the endpoint. Six attempts spread over ~11s.
+const LOGIN_RETRY_DELAYS_MS = [700, 1200, 2000, 3000, 4000]
+
+// Hard ceiling on the whole sequence, retries included. Past this we stop and
+// use the fallback redirect: the account and the draft are already saved, so
+// waiting longer only keeps the user staring at the success screen.
+const LOGIN_TOTAL_DEADLINE_MS = 15000
+
+// Logs the freshly created user in and returns where to send them. Null on any
+// failure — no throw, because the caller always has a usable fallback and a
+// login hiccup must not strand someone whose account was just created.
+//
+// The only expected failure is losing the race with the create-user webhook,
+// which reports as "account not ready" — so that is retried on a backoff until
+// the account appears or the deadline passes. Every other outcome (a timeout,
+// a refused login, a malformed answer) stops immediately: none of them get
+// better by asking again.
+export async function fetchLoginRedirect(email, password) {
+  const deadline = Date.now() + LOGIN_TOTAL_DEADLINE_MS
+
+  for (let attempt = 0; ; attempt++) {
+    const { url, retryable } = await loginAttempt(email, password)
+    if (url) {
+      if (attempt > 0) console.info(`[login] account ready after ${attempt + 1} attempts`)
+      return url
+    }
+    if (!retryable) return null
+
+    const delay = LOGIN_RETRY_DELAYS_MS[attempt]
+    // Out of attempts, or the next wait would run past the ceiling.
+    if (delay === undefined || Date.now() + delay >= deadline) {
+      console.warn('[login] account still not ready — falling back to the plain redirect')
+      return null
+    }
+    await after(delay)
+  }
+}
+
+// One call. Returns { url } on success, or { retryable } explaining whether a
+// second attempt is worth making.
+async function loginAttempt(email, password) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS)
+  try {
+    const res = await fetch(LOGIN_WORKFLOW_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+      signal: controller.signal,
+    })
+    const data = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      console.warn('[login] workflow returned', res.status, errorMessageOf(data))
+      return { url: null, retryable: isAccountNotReady(res.status, data) }
+    }
+    // A 200 that is not a success is still a failure — Bubble can report a
+    // refused login in the body rather than the status line.
+    if (data?.status && data.status !== 'success') {
+      console.warn('[login] workflow status:', data.status, errorMessageOf(data))
+      return { url: null, retryable: false }
+    }
+
+    const url = extractRedirect(data)
+    if (!url) {
+      // Logged without the token/user_id, which do not belong in a console.
+      console.warn('[login] no redirect URL in response; keys were', Object.keys(data?.response || data || {}))
+    }
+    return { url, retryable: false }
+  } catch (err) {
+    const timedOut = err?.name === 'AbortError'
+    console.warn('[login] request failed:', timedOut ? 'timed out' : err)
+    return { url: null, retryable: false }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Dispatches the signup and reports back ONLY whether the email was already
 // taken. Returns synchronously with the token plus an `outcome` promise the
 // caller awaits just long enough to pick a destination.

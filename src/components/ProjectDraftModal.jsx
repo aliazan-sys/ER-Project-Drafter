@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   submitDraftSignup,
+  fetchLoginRedirect,
   toDateInputValue,
   formatDisplayDate,
   fetchPlaceSuggestions,
@@ -548,8 +549,21 @@ function SignupModal({ draft, onClose }) {
         password,
       })
       const verdict = await outcome
+      // Show "You're all set!" before logging in, so the success screen covers
+      // that second round-trip instead of the button sitting on "Submitting…".
       setStatus('done')
-      const url = verdict === SIGNUP_DUPLICATE ? LOGIN_URL : REDIRECT_URL
+
+      let url = LOGIN_URL
+      if (verdict !== SIGNUP_DUPLICATE) {
+        // The account exists now, so log them in and let the web app hand back
+        // where to send them. A duplicate email skips this: the password they
+        // just typed is unlikely to be that existing account's password, so
+        // they authenticate normally instead.
+        //
+        // Falls back to the plain redirect if the login doesn't answer with a
+        // destination — their account and draft are already saved either way.
+        url = (await fetchLoginRedirect(email.trim(), password)) || REDIRECT_URL
+      }
       if (window.self !== window.top) {
         // Running inside an iframe (the AI Drafter is embedded in the Bubble
         // app). Navigate the WHOLE tab, not just the frame. For a normal
