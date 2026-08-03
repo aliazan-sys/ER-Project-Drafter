@@ -832,8 +832,13 @@ body {
 
 .chip-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 14px;
+}
+
+.chip-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .chip {
@@ -1091,6 +1096,16 @@ body {
 
 .btn.primary:hover {
   background: var(--teal-dark);
+}
+
+/* Looks disabled while remaining clickable so it can guide the user to the
+   first required field that still needs attention. */
+.btn.primary.guidance-disabled,
+.btn.primary.guidance-disabled:hover {
+  background: #a8c9c5;
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 0.72;
+  box-shadow: none;
 }
 
 /* ---------- Sign-up (email capture) modal ---------- */
@@ -1544,7 +1559,7 @@ body {
   line-height: 1.55;
 }
 
-/* "Ongoing" toggle shown in place of an end date for monthly retainers */
+/* "Ongoing" toggle sits beneath the end-date input for monthly retainers. */
 .radio-inline {
   display: inline-flex;
   align-items: center;
@@ -1552,7 +1567,7 @@ body {
   cursor: pointer;
   font-size: 14px;
   color: var(--ink);
-  margin-bottom: 8px;
+  margin-top: 8px;
 }
 
 .radio-inline input {
@@ -1885,6 +1900,17 @@ body {
   color: var(--ink);
 }
 
+/* Keep a visible writing line under Industry so it reads as an editable text
+   field even before the user focuses it. */
+.chip-edit-input {
+  border-bottom-color: var(--line);
+  padding-bottom: 4px;
+}
+
+.chip-edit-input:hover {
+  border-bottom-color: var(--teal);
+}
+
 /* Type/Size become dropdowns, styled to match the editable chips */
 .chip-select {
   cursor: pointer;
@@ -1924,6 +1950,12 @@ body {
   right: 0;
   min-width: 260px;
   max-width: min(420px, 78vw);
+}
+
+/* Portalled outside the wizard so neither its scrolling body nor its sidebar
+   can clip or cover Location suggestions. */
+.chip-menu-portal {
+  z-index: 10000;
 }
 
 .addr-option {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   submitDraftSignup,
   fetchLoginRedirect,
@@ -14,7 +15,13 @@ import {
 import { trackStage } from '../lib/tracking.js'
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
-import { ORG_TYPES, ORG_SIZES, canonicalOrgType, canonicalOrgSize } from '../../shared/orgProfile.js'
+import { currencyForLocation } from '../../shared/locationCurrency.js'
+import {
+  ORG_TYPES,
+  ORG_SIZES,
+  canonicalOrgType,
+  canonicalOrgSize,
+} from '../../shared/orgProfile.js'
 import { CATEGORIES, MAX_CATEGORIES } from '../../shared/categories.js'
 
 const STEPS = [
@@ -118,6 +125,8 @@ export default function ProjectDraftModal({
   // Only surfaced once they try to move on, so the form doesn't scold on open.
   const [showDateError, setShowDateError] = useState(false)
   const [showOrgError, setShowOrgError] = useState(false)
+  const [focusTarget, setFocusTarget] = useState('')
+  const wizRef = useRef(null)
   // Steps the user has actually landed on. A step earns its checkmark once it
   // has been visited AND its mandatory inputs are filled — and keeps it when
   // they move away (forward or back), instead of only marking steps < current.
@@ -166,12 +175,29 @@ export default function ProjectDraftModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visited])
 
-  const SCOPE_STEP = STEPS.findIndex((s) => s.id === 'scope')
-  const REVIEW_STEP = STEPS.findIndex((s) => s.id === 'review')
+  // A visually disabled submit button remains clickable so it can guide the
+  // user. Once its missing field's step renders, bring that exact control into
+  // view and focus its first interactive element.
+  useEffect(() => {
+    if (!focusTarget) return
+    const frame = requestAnimationFrame(() => {
+      const marker = wizRef.current?.querySelector(`[data-required-field="${focusTarget}"]`)
+      if (!marker) return
+      marker.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const control = marker.matches('input, textarea, select, button')
+        ? marker
+        : marker.querySelector('input, textarea, select, button, [tabindex]')
+      control?.focus({ preventScroll: true })
+      setFocusTarget('')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [step, focusTarget])
+
   const missingOrg = missingOrgFields(form, placesReady)
   // A timeline needs one end or the other — or an "Ongoing" retainer, which has
   // no end date by design.
   const hasDate = Boolean(form.scope.startDate || form.scope.completionDate || form.scope.ongoing)
+  const firstMissing = firstMissingRequiredField(form, placesReady)
 
   function close() {
     onSave?.(form)
@@ -189,19 +215,13 @@ export default function ProjectDraftModal({
   }
 
   function handleSignup() {
-    // The stepper lets them jump straight to Review, so re-check here rather
-    // than trusting that they walked through Scope.
-    if (!hasDate) {
-      setStep(SCOPE_STEP)
-      setShowDateError(true)
-      return
-    }
-    // The org profile chips live on this step and the AI never fills them in,
-    // so they are routinely still blank at this point. Hold the signup modal
-    // back and point at what's missing rather than submitting a partial brief.
-    if (missingOrg.length) {
-      setStep(REVIEW_STEP)
-      setShowOrgError(true)
+    // This remains clickable while styled as disabled: its job in that state
+    // is to take the user directly to the first required field still missing.
+    if (firstMissing) {
+      if (firstMissing.field === 'timeline') setShowDateError(true)
+      if (firstMissing.field === 'location') setShowOrgError(true)
+      setStep(stepIndex(firstMissing.step))
+      setFocusTarget(firstMissing.field)
       return
     }
     // Persist edits, then open the email-capture modal. The actual submit to
@@ -228,7 +248,7 @@ export default function ProjectDraftModal({
     // Deliberately no onClick on the overlay: a stray click outside must not
     // discard the draft. Closing goes through the X or Cancel only.
     <div className="modal-overlay">
-      <div className="wiz">
+      <div className="wiz" ref={wizRef}>
         {/* Sidebar stepper */}
         <aside className="wiz-side">
           <div className="wiz-side-title">PROJECT REQUEST</div>
@@ -271,6 +291,7 @@ export default function ProjectDraftModal({
                 <Label required>Project Title</Label>
                 <input
                   className="inp"
+                  data-required-field="title"
                   value={form.title}
                   onChange={(e) => set('title', e.target.value)}
                   placeholder="e.g. Website Re-Design for Growing Brand"
@@ -281,13 +302,15 @@ export default function ProjectDraftModal({
             {current.id === 'skills' && (
               <Section title="What skills and expertise does your project need?" sub="Select the categories and tools your project requires.">
                 <Label required>Choose up to 3 categories that best describe your project</Label>
-                <SearchMultiSelect
-                  items={form.categories}
-                  options={CATEGORIES}
-                  max={3}
-                  placeholder="Choose Category"
-                  onChange={(v) => set('categories', v)}
-                />
+                <div data-required-field="categories">
+                  <SearchMultiSelect
+                    items={form.categories}
+                    options={CATEGORIES}
+                    max={3}
+                    placeholder="Choose Category"
+                    onChange={(v) => set('categories', v)}
+                  />
+                </div>
                 <Label>Specific tools/platforms or skills you're looking for</Label>
                 <TagEditor
                   items={form.skills}
@@ -300,18 +323,22 @@ export default function ProjectDraftModal({
             {current.id === 'scope' && (
               <Section title="Estimate your project scope and timeline" sub="Help us understand how big this project is and when you'd like to start.">
                 <Label required>How complex is this project?</Label>
-                <RadioCards
-                  options={COMPLEXITY}
-                  value={form.scope.complexity}
-                  onChange={(v) => set('scope.complexity', v)}
-                />
+                <div data-required-field="complexity">
+                  <RadioCards
+                    options={COMPLEXITY}
+                    value={form.scope.complexity}
+                    onChange={(v) => set('scope.complexity', v)}
+                  />
+                </div>
                 {/* Label and its note are one block, so the flex gap doesn't
                     split them apart from each other. */}
                 <div>
                   <Label required>When do you expect this to happen?</Label>
-                  <p className="field-note">Fill in at least one — whichever you're surer about.</p>
+                  {!form.scope.ongoing && (
+                    <p className="field-note">Fill in at least one — whichever you're surer about.</p>
+                  )}
                 </div>
-                <div className="two-col">
+                <div className="two-col" data-required-field="timeline">
                   <div>
                     <Label>Expected start date</Label>
                     <DateInput
@@ -325,8 +352,18 @@ export default function ProjectDraftModal({
                   </div>
                   <div>
                     <Label>Target completion date</Label>
-                    {/* Monthly retainers are usually open-ended: offer "Ongoing"
-                        instead of forcing an end date. Clear it to enter one. */}
+                    {!form.scope.ongoing && (
+                      <DateInput
+                        value={form.scope.completionDate}
+                        invalid={showDateError && !hasDate}
+                        onChange={(v) => {
+                          set('scope.completionDate', v)
+                          setShowDateError(false)
+                        }}
+                      />
+                    )}
+                    {/* Monthly retainers are usually open-ended: keep the
+                        Ongoing control beneath the completion-date input. */}
                     {form.budget.pricingType === 'Monthly Rate' && (
                       <label className="radio-inline">
                         <input
@@ -342,16 +379,6 @@ export default function ProjectDraftModal({
                         />
                         <span>Ongoing</span>
                       </label>
-                    )}
-                    {!form.scope.ongoing && (
-                      <DateInput
-                        value={form.scope.completionDate}
-                        invalid={showDateError && !hasDate}
-                        onChange={(v) => {
-                          set('scope.completionDate', v)
-                          setShowDateError(false)
-                        }}
-                      />
                     )}
                   </div>
                 </div>
@@ -381,15 +408,17 @@ export default function ProjectDraftModal({
               return (
                 <Section title="Tell us about your budget" sub="This will help us match you to the teams within your range">
                   <Label required>How do you want to price this project?</Label>
-                  <RadioCards
-                    options={PRICING.map((p) => {
-                      const Icon = PRICING_ICON[p]
-                      return { value: p, icon: <Icon /> }
-                    })}
-                    value={b.pricingType}
-                    onChange={(v) => set('budget.pricingType', v)}
-                    columns={2}
-                  />
+                  <div data-required-field="pricing">
+                    <RadioCards
+                      options={PRICING.map((p) => {
+                        const Icon = PRICING_ICON[p]
+                        return { value: p, icon: <Icon /> }
+                      })}
+                      value={b.pricingType}
+                      onChange={(v) => set('budget.pricingType', v)}
+                      columns={2}
+                    />
+                  </div>
 
                   <div>
                     <Label>Select a currency</Label>
@@ -400,7 +429,7 @@ export default function ProjectDraftModal({
 
                   {/* Per Unit: pick what a "unit" means before the range. */}
                   {isPerUnit && (
-                    <div>
+                    <div data-required-field="unit">
                       <Label required>Per unit setting (unit type):</Label>
                       <RadioCards
                         options={UNIT_TYPES.map((u) => ({ value: u }))}
@@ -414,7 +443,7 @@ export default function ProjectDraftModal({
 
                   {/* Range shown for every priced option except "Not Sure". */}
                   {showRange && (
-                    <div>
+                    <div data-required-field="range">
                       <Label required>Investment Range?</Label>
                       <p className="field-note">Enter at least one value (From or To)</p>
                       <div className="two-col">
@@ -452,7 +481,7 @@ export default function ProjectDraftModal({
             {current.id === 'description' && (
               <Section title="Describe your project" sub="The more detail you give, the better your proposals will be.">
                 <Label required>Project description</Label>
-                <textarea className="inp area tall" value={form.description} onChange={(e) => set('description', e.target.value)} rows={9} />
+                <textarea data-required-field="description" className="inp area tall" value={form.description} onChange={(e) => set('description', e.target.value)} rows={9} />
                 <Label>Existing assets, access, or documentation to share</Label>
                 <textarea className="inp area" value={form.existingAssets} onChange={(e) => set('existingAssets', e.target.value)} rows={3} placeholder="None specified" />
               </Section>
@@ -479,7 +508,12 @@ export default function ProjectDraftModal({
             {isLast ? (
               <div className="foot-right">
                 <button className="btn plain" onClick={close}>Cancel</button>
-                <button className="btn primary" onClick={handleSignup}>
+                <button
+                  className={`btn primary ${firstMissing ? 'guidance-disabled' : ''}`}
+                  aria-disabled={Boolean(firstMissing)}
+                  title={firstMissing ? 'Complete the required fields before signing up' : undefined}
+                  onClick={handleSignup}
+                >
                   Sign up to submit the project <ArrowRightIcon />
                 </button>
               </div>
@@ -506,7 +540,7 @@ function SignupModal({ draft, onClose }) {
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [organizationName, setOrganizationName] = useState('')
+  const [organizationName, setOrganizationName] = useState(() => draft?.orgProfile?.name || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
@@ -745,11 +779,24 @@ function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
         </span>
       </div>
       <div className="chip-row">
-        <SelectChip label="Type" value={org.type} options={ORG_TYPES} invalid={flagged('Type')} onChange={(v) => set('orgProfile.type', v)} />
-        <SelectChip label="Size" value={org.size} options={ORG_SIZES} invalid={flagged('Size')} onChange={(v) => set('orgProfile.size', v)} />
+        <SelectChip
+          label="Type"
+          value={org.type}
+          options={ORG_TYPES}
+          allowEmpty
+          onChange={(v) => set('orgProfile.type', v)}
+        />
+        <SelectChip
+          label="Size"
+          value={org.size}
+          options={ORG_SIZES}
+          allowEmpty
+          onChange={(v) => set('orgProfile.size', v)}
+        />
         <EditChip label="Industry" value={org.industry} invalid={flagged('Industry')} onChange={(v) => set('orgProfile.industry', v)} />
         <AddressChip
           label="Location"
+          focusId="location"
           value={org.location}
           // Verified means "this exact string is one Google returned" — editing
           // a single character of a picked address makes it unverified again.
@@ -758,14 +805,14 @@ function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
           onChange={(v, isVerified) => {
             set('orgProfile.location', v)
             set('orgProfile.locationVerified', isVerified ? v : '')
+            set('budget.currency', currencyForLocation(v))
           }}
           onUnsupported={onPlacesUnsupported}
         />
       </div>
       {empties.length > 0 && (
         <p className="field-error">
-          ⚠️ Please complete your organization profile before submitting —{' '}
-          {empties.join(', ')} {empties.length === 1 ? 'is' : 'are'} still empty.
+          ⚠️ Please add your organisation's location before submitting.
         </p>
       )}
       {unverifiedLocation && (
@@ -864,6 +911,7 @@ function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
               items={adv.languages}
               options={LANGUAGES}
               placeholder="Choose Languages"
+              closeOnSelect
               onChange={(v) => set('advancedTerms.languages', v)}
             />
           </div>
@@ -873,6 +921,7 @@ function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
               items={adv.timezone}
               options={TIMEZONES}
               placeholder="Choose Timezones"
+              closeOnSelect
               onChange={(v) => set('advancedTerms.timezone', v)}
             />
           </div>
@@ -1013,7 +1062,7 @@ function TagEditor({ items = [], onChange, placeholder, max }) {
 // A searchable multi-select: click to open the option list, type to filter
 // (the typed text stays visible), click options to add them as removable chips.
 // Restricted to `options` and capped at `max`.
-function SearchMultiSelect({ items = [], options, onChange, placeholder, max }) {
+function SearchMultiSelect({ items = [], options, onChange, placeholder, max, closeOnSelect = false }) {
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
   const boxRef = useRef(null)
@@ -1036,7 +1085,7 @@ function SearchMultiSelect({ items = [], options, onChange, placeholder, max }) 
     if (atMax || items.includes(o)) return
     onChange([...items, o])
     setText('')
-    setOpen(true) // stay open so more can be added, up to max
+    setOpen(!closeOnSelect)
   }
 
   return (
@@ -1048,6 +1097,7 @@ function SearchMultiSelect({ items = [], options, onChange, placeholder, max }) 
           disabled={atMax}
           placeholder={atMax ? `Up to ${max} — remove one to add another` : placeholder}
           onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
           onChange={(e) => { setText(e.target.value); setOpen(true) }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && filtered.length) { e.preventDefault(); pick(filtered[0]) }
@@ -1204,7 +1254,12 @@ function EditChip({ label, value, invalid, onChange }) {
   return (
     <div className={`chip ${invalid ? 'is-invalid' : ''}`}>
       <span className="chip-label">{label}</span>
-      <input className="chip-input" value={value || ''} onChange={(e) => onChange(e.target.value)} />
+      <input
+        className="chip-input chip-edit-input"
+        value={value || ''}
+        placeholder="Enter industry…"
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   )
 }
@@ -1223,7 +1278,7 @@ const ADDRESS_DEBOUNCE_MS = 300
 // only a verified value passes validation — so "remote" or "N/A" can be typed
 // but never submitted. If no Maps key is configured the field degrades to the
 // plain text input it was before, and the caller relaxes the rule to match.
-function AddressChip({ label, value, invalid, verified, onChange, onUnsupported }) {
+function AddressChip({ label, focusId, value, invalid, verified, onChange, onUnsupported }) {
   const [items, setItems] = useState([])
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
@@ -1234,6 +1289,27 @@ function AddressChip({ label, value, invalid, verified, onChange, onUnsupported 
   // with a location already filled would open a menu the moment it renders.
   const typedRef = useRef(false)
   const boxRef = useRef(null)
+  const menuRef = useRef(null)
+  const [menuStyle, setMenuStyle] = useState({})
+
+  function positionMenu() {
+    const box = boxRef.current
+    if (!box) return
+    const rect = box.getBoundingClientRect()
+    const viewportPadding = 8
+    const width = Math.min(420, Math.max(260, rect.width), window.innerWidth - viewportPadding * 2)
+    const left = Math.max(
+      viewportPadding,
+      Math.min(rect.right - width, window.innerWidth - width - viewportPadding),
+    )
+    setMenuStyle({
+      position: 'fixed',
+      top: rect.bottom + 4,
+      left,
+      right: 'auto',
+      width,
+    })
+  }
 
   useEffect(() => {
     if (!supported || !typedRef.current) return
@@ -1276,11 +1352,28 @@ function AddressChip({ label, value, invalid, verified, onChange, onUnsupported 
   // Close the menu when clicking outside the chip.
   useEffect(() => {
     function onDoc(e) {
-      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false)
+      const outsideInput = boxRef.current && !boxRef.current.contains(e.target)
+      const outsideMenu = !menuRef.current || !menuRef.current.contains(e.target)
+      if (outsideInput && outsideMenu) setOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
+
+  // The suggestions are portalled outside the wizard's clipped scroll area.
+  // Keep the fixed overlay attached to the Location input while anything
+  // underneath it scrolls or resizes.
+  useEffect(() => {
+    if (!open) return
+    positionMenu()
+    const reposition = () => positionMenu()
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+    }
+  }, [open])
 
   function pick(s) {
     // Picking is not typing: clear the flag first so the value change below
@@ -1313,7 +1406,11 @@ function AddressChip({ label, value, invalid, verified, onChange, onUnsupported 
 
   const listId = `addr-menu-${label.toLowerCase()}`
   return (
-    <div className={`chip chip-address ${invalid ? 'is-invalid' : ''}`} ref={boxRef}>
+    <div
+      className={`chip chip-address ${invalid ? 'is-invalid' : ''}`}
+      data-required-field={focusId}
+      ref={boxRef}
+    >
       <span className="chip-label">
         {label}
         {verified && (
@@ -1341,8 +1438,14 @@ function AddressChip({ label, value, invalid, verified, onChange, onUnsupported 
         onFocus={() => { if (items.length) setOpen(true) }}
         onKeyDown={onKeyDown}
       />
-      {open && items.length > 0 && (
-        <ul className="ms-menu chip-menu" id={listId} role="listbox">
+      {open && items.length > 0 && createPortal(
+        <ul
+          className="ms-menu chip-menu chip-menu-portal"
+          id={listId}
+          role="listbox"
+          ref={menuRef}
+          style={menuStyle}
+        >
           {items.map((s, i) => (
             <li key={s.id || s.value} role="presentation">
               <button
@@ -1362,7 +1465,8 @@ function AddressChip({ label, value, invalid, verified, onChange, onUnsupported 
               </button>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   )
@@ -1372,16 +1476,19 @@ function AddressChip({ label, value, invalid, verified, onChange, onUnsupported 
 // options are offered — an off-list value is never added to the dropdown. When
 // nothing is selected it shows a "Select…" prompt rather than defaulting to the
 // first option, so an unanswered field never looks pre-filled.
-function SelectChip({ label, value, options, invalid, onChange }) {
+function SelectChip({ label, value, options, invalid, disabled = false, allowEmpty = false, onChange }) {
   return (
     <div className={`chip ${invalid ? 'is-invalid' : ''}`}>
       <span className="chip-label">{label}</span>
       <select
         className={`chip-input chip-select ${value ? '' : 'is-empty'}`}
         value={value || ''}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       >
-        <option value="" disabled hidden>Select…</option>
+        <option value="" disabled={!allowEmpty} hidden={!allowEmpty}>
+          {allowEmpty ? 'Not specified' : 'Select…'}
+        </option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
@@ -1467,17 +1574,35 @@ function isStepComplete(id, form, placesReady = true) {
   }
 }
 
-// The four chips under "Your Organization Profile Summary". All are required:
-// they are what gets shared, anonymized, on the project request, so a blank one
-// ships an incomplete brief to matched teams. The AI is told never to invent
-// these, so an unanswered field genuinely arrives empty and must be filled by
-// hand.
-const ORG_FIELDS = [
-  ['type', 'Type'],
-  ['size', 'Size'],
-  ['industry', 'Industry'],
-  ['location', 'Location'],
-]
+// Required fields in the same order the wizard presents them. This powers the
+// final button's disabled appearance and its click-to-fix guidance.
+function firstMissingRequiredField(form, placesReady = true) {
+  if (!form.title?.trim()) return { step: 'title', field: 'title' }
+  if (!(form.categories?.length > 0)) return { step: 'skills', field: 'categories' }
+  if (!form.scope?.complexity) return { step: 'scope', field: 'complexity' }
+  if (!(form.scope?.startDate || form.scope?.completionDate || form.scope?.ongoing)) {
+    return { step: 'scope', field: 'timeline' }
+  }
+
+  const budget = form.budget || {}
+  if (!budget.pricingType) return { step: 'investment', field: 'pricing' }
+  if (budget.pricingType === 'Per Unit' && !budget.unitType) {
+    return { step: 'investment', field: 'unit' }
+  }
+  if (
+    budget.pricingType !== 'Not Sure' &&
+    !budget.estimatedCostFrom &&
+    !budget.estimatedCostTo
+  ) {
+    return { step: 'investment', field: 'range' }
+  }
+
+  if (!form.description?.trim()) return { step: 'description', field: 'description' }
+  if (missingOrgFields(form, placesReady).length > 0) {
+    return { step: 'review', field: 'location' }
+  }
+  return null
+}
 
 // Returns a problem per unusable field, in display order:
 //   { key, label, reason: 'empty' | 'unverified' }
@@ -1496,16 +1621,15 @@ const ORG_FIELDS = [
 // "non-empty", exactly as it behaved before autocomplete existed.
 function missingOrgFields(form, placesReady = true) {
   const org = form?.orgProfile || {}
-  const problems = []
-  for (const [key, label] of ORG_FIELDS) {
-    const value = String(org[key] ?? '').trim()
-    if (!value) {
-      problems.push({ key, label, reason: 'empty' })
-    } else if (key === 'location' && placesReady && value !== String(org.locationVerified ?? '').trim()) {
-      problems.push({ key, label, reason: 'unverified' })
-    }
+  // Type is fixed to Solo Business for an Individual; Size and Industry remain
+  // optional. Location is required for every submitter.
+
+  const location = String(org.location ?? '').trim()
+  if (!location) return [{ key: 'location', label: 'Location', reason: 'empty' }]
+  if (placesReady && location !== String(org.locationVerified ?? '').trim()) {
+    return [{ key: 'location', label: 'Location', reason: 'unverified' }]
   }
-  return problems
+  return []
 }
 
 function costRange(budget) {
@@ -1527,6 +1651,11 @@ function timeline(scope) {
 
 // Fill in any missing fields so the editor never hits undefined.
 function normalize(d = {}) {
+  const normalizedOrgType = canonicalOrgType(d.orgProfile?.type)
+  const hasOrgType = Object.prototype.hasOwnProperty.call(d.orgProfile || {}, 'type')
+  const submittingAs = d.orgProfile?.submittingAs === 'Individual' || normalizedOrgType === 'Solo Business'
+    ? 'Individual'
+    : 'Organisation'
   return {
     title: d.title || '',
     // Last line of defence for categories: the schema enum and the prompt both
@@ -1558,7 +1687,7 @@ function normalize(d = {}) {
       comments: '',
       ...(d.budget || {}),
       // Only GBP/EUR/USD are supported (matches the Bubble currency Option Set).
-      currency: CURRENCIES.includes(d.budget?.currency) ? d.budget.currency : 'GBP',
+      currency: currencyForLocation(d.orgProfile?.location),
       // The symbol is rendered by the field itself, so store just the number.
       estimatedCostFrom: numericOnly(d.budget?.estimatedCostFrom),
       estimatedCostTo: numericOnly(d.budget?.estimatedCostTo),
@@ -1566,7 +1695,8 @@ function normalize(d = {}) {
     description: d.description || '',
     existingAssets: d.existingAssets || '',
     orgProfile: {
-      industry: '', location: '',
+      submittingAs,
+      name: '', industry: '', location: '',
       // Set by the server when it resolved the AI's location against Google,
       // or by the Location chip when the user picks a suggestion. Location
       // only counts as answered while these two match — see missingOrgFields.
@@ -1574,7 +1704,9 @@ function normalize(d = {}) {
       ...(d.orgProfile || {}),
       // Type & Size are fixed dropdowns — drop any AI value that's off-list,
       // and migrate values this app used to offer under a different wording.
-      type: canonicalOrgType(d.orgProfile?.type),
+      // New Individual drafts arrive as Solo Business, but once the review is
+      // open the unlocked optional field may be changed or explicitly cleared.
+      type: submittingAs === 'Individual' && !hasOrgType ? 'Solo Business' : normalizedOrgType,
       size: canonicalOrgSize(d.orgProfile?.size),
     },
     // The AI's questions are SUGGESTIONS the user opts into — they don't get

@@ -9,6 +9,7 @@
 
 import { TIMEZONES } from './timezones.js'
 import { ORG_TYPES, ORG_SIZES } from './orgProfile.js'
+import { currencyForLocation } from './locationCurrency.js'
 import { CATEGORIES, MAX_CATEGORIES } from './categories.js'
 import { resolvePlace } from './places.js'
 
@@ -71,6 +72,8 @@ export const responseSchema = {
     orgProfile: {
       type: 'object',
       properties: {
+        submittingAs: { type: 'string' },
+        name: { type: 'string' },
         // Plain strings — NOT enums — because Gemini's response schema rejects
         // an empty-string enum value, and these must be allowed to be "" when
         // the user didn't state them. The prompt constrains Type/Size to the
@@ -81,6 +84,7 @@ export const responseSchema = {
         industry: { type: 'string' },
         location: { type: 'string' },
       },
+      required: ['submittingAs', 'name', 'type', 'size', 'industry', 'location'],
     },
     screeningQuestions: { type: 'array', items: { type: 'string' } },
     levelOfExperience: {
@@ -95,7 +99,7 @@ export const responseSchema = {
       },
     },
   },
-  required: ['title', 'categories', 'description', 'scope', 'budget'],
+  required: ['title', 'categories', 'description', 'scope', 'budget', 'orgProfile'],
 }
 
 const buildSystemInstruction = (today) => `You are the "EqualReach Project Request Drafter".
@@ -123,7 +127,8 @@ ${CATEGORIES.map((c) => `    "${c}"`).join('\n')}
   "28 September 2026"). Never use vague phrases like "Early July" or "Mid-July" —
   always commit to a specific day. Infer sensible defaults if the user didn't say.
 - budget.pricingType: best fit of Per Unit / Monthly Rate / Fixed Price / Not Sure.
-- budget.currency: default "GBP" unless the user implies otherwise.
+- budget.currency: match the submitter location: EU = EUR, UK = GBP, US = USD,
+  and every other country (or no location) = USD.
 - budget.estimatedCostFrom / budget.estimatedCostTo: the lower and upper bounds
   of a realistic cost range, each with the currency symbol (e.g. "£4,500" and
   "£5,500"). estimatedCostTo must be greater than or equal to estimatedCostFrom.
@@ -139,15 +144,28 @@ ${CATEGORIES.map((c) => `    "${c}"`).join('\n')}
   collaboration style and scope clarity (this is the meatiest field).
 - existingAssets: what the client likely already has, or "None specified" if truly none.
 - orgProfile: THE ONLY EXCEPTION to the "never leave blank / invent details" rule.
-  Fill type, size, industry and location ONLY from what the user EXPLICITLY stated
-  about their organisation. If the user did not clearly give a field, return ""
-  (empty string) — NEVER guess, infer, or derive it. In particular:
+  Record whether the user is submitting as an individual or for an organisation,
+  and otherwise fill fields ONLY from what the user EXPLICITLY stated. If the
+  user did not clearly give a field, return "" (empty string) — NEVER guess.
+  - orgProfile.submittingAs: exactly "Individual" or "Organisation" based on the
+    user's answer to the intake question.
+  - orgProfile.name: for an Organisation, its stated name; for an Individual, "".
+  - If submittingAs is "Individual", set orgProfile.type to "Solo Business" and
+    leave size, industry and location empty unless already explicitly supplied.
+  - If submittingAs is "Organisation", populate optional Type, Size and Industry
+    only when the user explicitly volunteered those details anywhere in the
+    conversation. Never infer them from the organisation name, project, wording,
+    or other context.
+  In particular:
     * Do NOT map a vague adjective like "small", "big", or "growing" to a size —
       only fill size if the user gave an employee count or an explicit size band.
     * Do NOT treat the project's topic/subject as the industry.
     * Only fill a field if the user actually described their organisation that way.
-  - orgProfile.type: when explicitly stated, it MUST be exactly one of: ${ORG_TYPES.map((t) => `"${t}"`).join(', ')}. Pick the closest match; otherwise "".
-  - orgProfile.size: when an employee count / size band is explicitly given, it MUST be exactly one of: ${ORG_SIZES.map((s) => `"${s}"`).join(', ')}; otherwise "".
+  - orgProfile.type: "Solo Business" for an Individual. For an Organisation,
+    when explicitly stated it MUST be exactly one of: ${ORG_TYPES.map((t) => `"${t}"`).join(', ')}; otherwise "".
+  - orgProfile.size: when an employee count or size band is explicitly stated,
+    it MUST be exactly one of: ${ORG_SIZES.map((s) => `"${s}"`).join(', ')};
+    otherwise "". Never default to the first option.
   - orgProfile.industry: free text ONLY if the user stated it, else "".
   - orgProfile.location: a GEOGRAPHIC PLACE ONLY if the user stated it, else "". Write it as a real address or place name that a maps service would recognise — "London, UK", "Nairobi, Kenya", "221B Baker Street, London, UK" — never a description like "remote", "across Europe" or "our head office".
 - screeningQuestions: 2-3 sharp questions to vet partners.
@@ -185,7 +203,7 @@ You need to collect all of the following fields before drafting:
 3. Budget — how much they plan to spend and preferred pricing type
 4. Goals — what success looks like for this project
 5. Additional information — any specific skills, tools, constraints, or assets relevant to the project
-6. Organisation profile — the organisation's type, size, industry, and location
+6. Submitter profile — whether the user is submitting as an Individual or on behalf of an Organisation; Location is required for both, and Organisation name is required for an Organisation
 
 Rules:
 - Before every reply, read the full conversation and mark which fields are already covered — explicitly or implicitly.
@@ -200,11 +218,26 @@ Rules:
   - "total", "in total", "one-off", "fixed", "flat" or a lone lump sum -> Fixed Price
   Only ask about pricing type if the amount is given with no wording that implies one. When you do ask about pricing type, always list the options in parentheses, e.g. "What pricing structure works best for you (per unit, monthly rate, fixed price, or not sure)?" — a user would not otherwise know which pricing structures are available.
 - Field 5 is optional — if nothing relevant is missing, skip it.
-- Field 6 (organisation profile) — ANSWERING is optional, but you MUST ASK about it exactly once before you draft. This is required: never set readyToDraft until you have already asked the organisation-profile question in a previous turn. Ask for the organisation's type, size, industry, and location together in one short question, listing the type and size choices in parentheses so the user knows the options:
-  - type options: ${ORG_TYPES.join(', ')}
-  - size options: ${ORG_SIZES.join(', ')}
-  Example: "Lastly, tell me about your organisation — its type (${ORG_TYPES.join(', ')}), size (${ORG_SIZES.join(', ')}), industry, and location?"
-  The user may answer all, some, or none. If they skip it or say "not sure", accept that and move on to drafting — do NOT press or re-ask. Never invent these details; whatever the user does not give is left blank for them to fill in the review step.
+- Field 6 (submitter profile) is a short branching conversation at the end of
+  intake. Never combine it into one question and never ask for organisation Type,
+  Size or Industry.
+  1. First ask exactly: "Are you submitting as an individual or on behalf of an organisation?"
+     Return exactly ["Individual", "Organisation"] as its suggestions; this
+     binary question is the exception to the general escape-hatch suggestion rule.
+  2. If the user answers Individual (including "Solo Business"), ask exactly:
+     "Where are you based?" Ask only once. Preserve their answer when supplied;
+     if they omit or decline, leave Location empty and proceed to drafting so
+     they can enter it manually in the required review field. Their draft will
+     set Type to "Solo Business" automatically.
+  3. If the user answers Organisation, ask exactly: "What is your organisation’s name, and where is it based?"
+     This follow-up is required before drafting. Do not ask for Type, Size or Industry.
+  4. Do not ask a second location question. If the Organisation user omits it in
+     the name-and-location answer, leave Location empty and proceed to drafting;
+     the required review field will collect it manually. Name is collected for
+     the signup form. Type, Size and Industry remain optional and must not delay drafting.
+  If the user volunteers Type, Size or Industry while answering any question,
+  preserve those details for the draft even though you do not ask for them.
+  Never set readyToDraft in the same turn that you ask either profile question.
 
 STRICT OUTPUT RULE — your reply must be ONLY the next question (or the closing line). Nothing before it, nothing after it.
 Forbidden — never output any of the following:
@@ -233,7 +266,11 @@ SUGGESTIONS — alongside the question, return 2-4 plausible answers to it that 
 - The last one should always be an escape hatch such as "Not sure yet" when the question is one a user could reasonably not have decided on.
 - When readyToDraft is true, return an empty suggestions array.
 
-Only set readyToDraft to true once BOTH are true: (a) the required fields (1-4) are all covered, AND (b) you have already asked the organisation-profile question (field 6) at least once in an earlier turn. When both hold, set readyToDraft to true and reply with exactly: "Drafting your project request now."
+Only set readyToDraft to true once the required project fields (1-4) are covered
+AND the profile branch is complete: an Individual has received and answered or
+declined the single location follow-up, or an Organisation has answered the single
+name-and-location follow-up. When
+both hold, set readyToDraft to true and reply with exactly: "Drafting your project request now."
 
 Never write the draft itself here. Always reply as JSON { reply, readyToDraft, suggestions }.`
 
@@ -417,10 +454,19 @@ export async function chatReply(messages) {
 // lookup fails, the model's original text is passed through untouched.
 async function withResolvedLocation(draft) {
   const location = draft?.orgProfile?.location
-  if (!location) return draft
+  if (!location) {
+    return {
+      ...draft,
+      budget: { ...(draft?.budget || {}), currency: 'USD' },
+    }
+  }
   const { value, resolved } = await resolvePlace(location)
   return {
     ...draft,
+    budget: {
+      ...(draft?.budget || {}),
+      currency: currencyForLocation(value),
+    },
     orgProfile: {
       ...draft.orgProfile,
       location: value,

@@ -2,7 +2,10 @@
 // The API key lives on the server, so it is never exposed to the browser.
 
 import { CATEGORIES } from '../../shared/categories.js'
-import { BUBBLE_ORG_TYPE_VALUES, BUBBLE_ORG_SIZE_VALUES } from '../../shared/orgProfile.js'
+import {
+  BUBBLE_ORG_TYPE_VALUES,
+  BUBBLE_ORG_SIZE_VALUES,
+} from '../../shared/orgProfile.js'
 
 // Stable anonymous identity — generated once, persisted in localStorage.
 // Lets the server filter history to this browser without requiring an account.
@@ -247,13 +250,14 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
   const budget = d.budget || {}
   // Internal bookkeeping for the Location field's "must be a real address"
   // check — it has done its job by now and is not part of the brief.
-  const { locationVerified, ...rest } = d.orgProfile || {}
+  const profile = d.orgProfile || {}
   // Convert the dropdown labels through the explicit Bubble mappings. These
   // values are never derived by lowercasing or replacing punctuation/spaces.
   const orgProfile = {
-    ...rest,
-    type: BUBBLE_ORG_TYPE_VALUES[rest.type] ?? '',
-    size: BUBBLE_ORG_SIZE_VALUES[rest.size] ?? '',
+    type: BUBBLE_ORG_TYPE_VALUES[profile.type] ?? '',
+    size: BUBBLE_ORG_SIZE_VALUES[profile.size] ?? '',
+    industry: profile.industry ?? '',
+    location: profile.location ?? '',
   }
   return {
     email,
