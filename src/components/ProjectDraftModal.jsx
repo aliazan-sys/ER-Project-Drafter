@@ -14,7 +14,7 @@ import {
 import { trackStage } from '../lib/tracking.js'
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
-import { ORG_TYPES, ORG_SIZES } from '../../shared/orgProfile.js'
+import { ORG_TYPES, ORG_SIZES, canonicalOrgType, canonicalOrgSize } from '../../shared/orgProfile.js'
 import { CATEGORIES, MAX_CATEGORIES } from '../../shared/categories.js'
 
 const STEPS = [
@@ -1572,9 +1572,10 @@ function normalize(d = {}) {
       // only counts as answered while these two match — see missingOrgFields.
       locationVerified: '',
       ...(d.orgProfile || {}),
-      // Type & Size are fixed dropdowns — drop any AI value that's off-list.
-      type: ORG_TYPES.includes(d.orgProfile?.type) ? d.orgProfile.type : '',
-      size: ORG_SIZES.includes(d.orgProfile?.size) ? d.orgProfile.size : '',
+      // Type & Size are fixed dropdowns — drop any AI value that's off-list,
+      // and migrate values this app used to offer under a different wording.
+      type: canonicalOrgType(d.orgProfile?.type),
+      size: canonicalOrgSize(d.orgProfile?.size),
     },
     // The AI's questions are SUGGESTIONS the user opts into — they don't get
     // added automatically. On a fresh draft `screeningQuestions` starts empty
