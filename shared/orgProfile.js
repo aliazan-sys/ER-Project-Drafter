@@ -24,6 +24,25 @@ export const ORG_SIZES = [
   'Large +50 employees',
 ]
 
+// Exact values expected by the Bubble webhook for CLIENT_ORG_TYPE and
+// CLIENT_SIZE. These are explicit mappings supplied from Bubble—not generated
+// by lowercasing or replacing spaces/punctuation.
+export const BUBBLE_ORG_TYPE_VALUES = {
+  Startup: 'startup',
+  'Small-Medium Enterprise (SME)': 'sme',
+  Enterprise: 'enterprise',
+  'Solo Business': 'solo',
+  'NGO or Charity': 'ngo',
+  'INGO & Government': 'ingo',
+}
+
+export const BUBBLE_ORG_SIZE_VALUES = {
+  'Less than 10 employees': 'less_than_10',
+  'Small, 10-20 employees': 'small',
+  'Medium 20-50 employees': 'medium',
+  'Large +50 employees': 'large',
+}
+
 // Values this app used to offer that are still sitting in saved drafts. Mapped
 // forward so reopening an old draft keeps its answer instead of silently
 // blanking the chip.

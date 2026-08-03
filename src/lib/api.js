@@ -2,7 +2,7 @@
 // The API key lives on the server, so it is never exposed to the browser.
 
 import { CATEGORIES } from '../../shared/categories.js'
-import { canonicalOrgType, canonicalOrgSize } from '../../shared/orgProfile.js'
+import { BUBBLE_ORG_TYPE_VALUES, BUBBLE_ORG_SIZE_VALUES } from '../../shared/orgProfile.js'
 
 // Stable anonymous identity — generated once, persisted in localStorage.
 // Lets the server filter history to this browser without requiring an account.
@@ -248,15 +248,12 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
   // Internal bookkeeping for the Location field's "must be a real address"
   // check — it has done its job by now and is not part of the brief.
   const { locationVerified, ...rest } = d.orgProfile || {}
-  // Type and Size are Bubble Option Sets resolved by display text, so a value
-  // that isn't exactly on the list arrives unmatched and the field fails to
-  // map. Enforced again here, not just in the form: whatever a stored draft or
-  // an older build put in the state, only a resolvable value leaves the
-  // browser — an empty one is far easier to spot than a silently dropped one.
+  // Convert the dropdown labels through the explicit Bubble mappings. These
+  // values are never derived by lowercasing or replacing punctuation/spaces.
   const orgProfile = {
     ...rest,
-    type: canonicalOrgType(rest.type),
-    size: canonicalOrgSize(rest.size),
+    type: BUBBLE_ORG_TYPE_VALUES[rest.type] ?? '',
+    size: BUBBLE_ORG_SIZE_VALUES[rest.size] ?? '',
   }
   return {
     email,
