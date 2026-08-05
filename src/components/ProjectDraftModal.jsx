@@ -271,11 +271,20 @@ export default function ProjectDraftModal({
           </ol>
         </aside>
 
-        {/* Main panel */}
-        <div className="wiz-main">
-          <div className="wiz-head">
-            <div className="wiz-step-count">
-              Step {step + 1} of {STEPS.length}
+          {/* Main panel */}
+          <div className="wiz-main">
+            <div className="wiz-head">
+              <button
+                className={`wiz-head-back ${step === 0 ? 'is-hidden' : ''}`}
+                onClick={() => setStep(step - 1)}
+                disabled={step === 0}
+                aria-hidden={step === 0}
+                tabIndex={step === 0 ? -1 : 0}
+              >
+                <ArrowLeftIcon /> Back
+              </button>
+              <div className="wiz-step-count">
+                Step {step + 1} of {STEPS.length}
               {isStepComplete(current.id, form, placesReady) && (
                 <span className="step-complete-badge">Step Completed</span>
               )}
@@ -504,7 +513,7 @@ export default function ProjectDraftModal({
               <button className="btn ghost" onClick={() => setStep(step - 1)}>
                 <ArrowLeftIcon /> Back
               </button>
-            ) : <span />}
+            ) : <span className="wiz-foot-spacer" />}
             {isLast ? (
               <div className="foot-right">
                 <button className="btn plain" onClick={close}>Cancel</button>
