@@ -131,7 +131,7 @@ export async function fetchPlaceSuggestions(query, { signal } = {}) {
 // EqualReach web app (Bubble backend workflow). Called directly from the
 // browser — this is an external endpoint, not our proxy.
 const CREATE_USER_AND_DRAFT_URL =
-  'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf/webhook-create-user-and-draft-project'
+  'https://admin-83903.bubbleapps.io/api/1.1/wf/webhook-create-user-and-draft-project'
 
 // The Bubble workflow types several params as Option Sets / Date / number, so
 // the free-text draft values must be coerced to match before sending.
@@ -345,7 +345,7 @@ function after(ms, value) {
 // carrying whatever session it wants to hand over. We never construct that URL
 // ourselves.
 const LOGIN_WORKFLOW_URL =
-  'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf/log-in'
+  'https://admin-83903.bubbleapps.io/api/1.1/wf/log-in'
 
 // Same ceiling as the duplicate check. Past it we stop waiting and fall back to
 // the plain redirect — the account and draft already exist by then, so the

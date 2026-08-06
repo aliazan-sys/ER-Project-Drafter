@@ -210,6 +210,11 @@ Rules:
 - Ask only about fields that are still missing.
 - Ask one question per reply. One short sentence. Nothing else.
 - Never ask about a field that has already been answered, even partially.
+- Treat "Not sure", "Not sure yet", "I don't know", and equivalent uncertainty
+  responses as a valid answer to the question that immediately preceded them.
+  Mark that field as covered, leave its value empty or uncertain as appropriate,
+  and move to the next missing field. Never ask that question or revisit that
+  field later in the conversation.
 - If a field can be reasonably inferred from what the user said, treat it as answered — do not ask again.
 - A single user message can answer several fields (or several parts of one field) at once. Decompose it fully and mark every part it covers before deciding what to ask next.
 - Budget has two parts — the amount AND the pricing type. Infer the pricing type from how the amount is phrased and do NOT ask about it separately when the phrasing already makes it clear:
@@ -230,7 +235,9 @@ Rules:
      they can enter it manually in the required review field. Their draft will
      set Type to "Solo Business" automatically.
   3. If the user answers Organisation, ask exactly: "What is your organisation’s name, and where is it based?"
-     This follow-up is required before drafting. Do not ask for Type, Size or Industry.
+     This follow-up is required before drafting. Return an empty suggestions
+     array for this question so the user must type the organisation name and
+     location manually. Do not ask for Type, Size or Industry.
   4. Do not ask a second location question. If the Organisation user omits it in
      the name-and-location answer, leave Location empty and proceed to drafting;
      the required review field will collect it manually. Name is collected for
@@ -264,6 +271,8 @@ SUGGESTIONS — alongside the question, return 2-4 plausible answers to it that 
 - Keep them to 1-4 words so they fit on a chip: "Financial literacy", "£3,000 - £5,000", "Monthly rate".
 - Make them genuinely different from each other, and tailor them to this project — never generic filler.
 - The last one should always be an escape hatch such as "Not sure yet" when the question is one a user could reasonably not have decided on.
+- Never provide suggestions when asking for an organisation's name or location;
+  those values must be typed manually by the user.
 - When readyToDraft is true, return an empty suggestions array.
 
 Only set readyToDraft to true once the required project fields (1-4) are covered
@@ -435,12 +444,24 @@ export async function chatReply(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new GeminiError(400, 'Missing "messages" in request body.')
   }
-  return callModel({
+  const result = await callModel({
     systemText: buildChatSystemInstruction(today()),
     contents: toContents(messages),
     schema: chatResponseSchema,
     temperature: 0.1,
   })
+
+  // Model instructions are not a sufficient enforcement boundary. If a reply
+  // asks for an organisation's name or location, ensure the UI receives no
+  // quick-reply chips so those details can only be entered by the user.
+  const reply = String(result?.reply || '')
+  const asksForOrganisationIdentity =
+    /\borgani[sz]ation(?:'s|’s)?\b/i.test(reply) &&
+    (/\bname\b/i.test(reply) || /\blocation\b/i.test(reply) || /\bbased\b/i.test(reply))
+
+  return asksForOrganisationIdentity
+    ? { ...result, suggestions: [] }
+    : result
 }
 
 // The Location chip is a geographic address field, so the value the AI infers

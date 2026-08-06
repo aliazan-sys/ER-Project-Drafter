@@ -62,8 +62,8 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     try {
       const { draft: result, id } = await generateDraftFromChat(convo)
       setDraft(result)
-      // Fresh draft — start the wizard at Title with a clean visited set.
-      setDraftStep(0)
+      // Fresh draft — open on Review, matching the full Project Drafter.
+      setDraftStep(REVIEW_STEP_INDEX)
       setDraftVisited([])
       setStatus('done')
       setModalOpen(true)
