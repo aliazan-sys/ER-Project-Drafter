@@ -2877,6 +2877,27 @@ button.edit-pencil {
 }
 
 @media (max-width: 640px) {
+  /* A pasted project brief can span several lines. Use a rounded rectangle
+     instead of stretching the welcome pill into an oversized oval, keep the
+     text within a scrollable area, and pin Send to the bottom edge. */
+  .chat-welcome .chat-pill-form {
+    align-items: flex-end;
+    border-radius: 24px;
+    padding: 12px 10px 12px 16px !important;
+  }
+
+  .chat-welcome .chat-pill-form textarea {
+    min-width: 0;
+    max-height: 144px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .chat-welcome .chat-pill-send {
+    flex: 0 0 auto;
+  }
+
   .wiz-head {
     display: grid;
     grid-template-columns: 1fr auto 1fr;

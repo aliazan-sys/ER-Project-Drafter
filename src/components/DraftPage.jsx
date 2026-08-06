@@ -39,6 +39,9 @@ export default function DraftPage() {
 function ChatPanel({ onNewChat }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
+  const [smallScreen, setSmallScreen] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches,
+  )
   const [status, setStatus] = useState('chatting') // chatting | thinking | drafting | done | error
   const [draft, setDraft] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -60,13 +63,21 @@ function ChatPanel({ onNewChat }) {
   const textareaRef = useRef(null)
 
   useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)')
+    const update = () => setSmallScreen(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    const next = Math.min(el.scrollHeight, 200)
+    const maxHeight = smallScreen && !hasStarted ? 144 : 200
+    const next = Math.min(el.scrollHeight, maxHeight)
     el.style.height = `${next}px`
-    el.style.overflowY = el.scrollHeight > 200 ? 'auto' : 'hidden'
-  }, [input])
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  }, [input, smallScreen, hasStarted])
 
   function scrollToBottom() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -213,7 +224,11 @@ function ChatPanel({ onNewChat }) {
           <form onSubmit={handleSend} className="chat-pill-form">
             <textarea
               {...textareaProps}
-              placeholder={'Ask anything — e.g. "I need a new website for my nonprofit"'}
+              placeholder={
+                smallScreen
+                  ? 'Describe your project…'
+                  : 'Ask anything — e.g. "I need a new website for my nonprofit"'
+              }
               autoFocus
             />
             <button type="submit" className="chat-pill-send" disabled={!input.trim()} aria-label="Send">
