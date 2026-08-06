@@ -129,9 +129,39 @@ export async function fetchPlaceSuggestions(query, { signal } = {}) {
 
 // Sign-up handoff: create the user and save their drafted project in the
 // EqualReach web app (Bubble backend workflow). Called directly from the
-// browser — this is an external endpoint, not our proxy.
+// browser — this is an external endpoint, not our proxy. Both Webflow branches
+// embed the same Vercel app, so select Bubble's test workflows from the parent
+// frame hostname. A missing/unknown parent deliberately defaults to live,
+// preserving the existing behavior for direct links and production embeds.
+const STAGING_WEBFLOW_HOST = 'webflow.equalreach.io'
+
+function embeddingHostname() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return ''
+
+  try {
+    const ancestorOrigin = window.location.ancestorOrigins?.[0]
+    if (ancestorOrigin) return new URL(ancestorOrigin).hostname.toLowerCase()
+  } catch {
+    // Fall through to the standard referrer below.
+  }
+
+  try {
+    return document.referrer ? new URL(document.referrer).hostname.toLowerCase() : ''
+  } catch {
+    return ''
+  }
+}
+
+export function bubbleWorkflowBaseForHost(hostname = '') {
+  return String(hostname).toLowerCase() === STAGING_WEBFLOW_HOST
+    ? 'https://admin-83903.bubbleapps.io/version-test/api/1.1/wf'
+    : 'https://admin-83903.bubbleapps.io/api/1.1/wf'
+}
+
+const BUBBLE_WORKFLOW_BASE = bubbleWorkflowBaseForHost(embeddingHostname())
+
 const CREATE_USER_AND_DRAFT_URL =
-  'https://admin-83903.bubbleapps.io/api/1.1/wf/webhook-create-user-and-draft-project'
+  `${BUBBLE_WORKFLOW_BASE}/webhook-create-user-and-draft-project`
 
 // The Bubble workflow types several params as Option Sets / Date / number, so
 // the free-text draft values must be coerced to match before sending.
@@ -345,7 +375,7 @@ function after(ms, value) {
 // carrying whatever session it wants to hand over. We never construct that URL
 // ourselves.
 const LOGIN_WORKFLOW_URL =
-  'https://admin-83903.bubbleapps.io/api/1.1/wf/log-in'
+  `${BUBBLE_WORKFLOW_BASE}/log-in`
 
 // Same ceiling as the duplicate check. Past it we stop waiting and fall back to
 // the plain redirect — the account and draft already exist by then, so the
