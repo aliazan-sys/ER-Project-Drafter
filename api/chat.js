@@ -13,7 +13,9 @@ export default async function handler(req, res) {
   try {
     // Vercel parses JSON bodies automatically, but guard for string bodies too.
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
-    const result = await chatReply(body.messages)
+    const result = await chatReply(body.messages, {
+      skipOrgProfile: body.skipOrgProfile === true,
+    })
     return res.status(200).json(result)
   } catch (err) {
     if (err instanceof GeminiError) {

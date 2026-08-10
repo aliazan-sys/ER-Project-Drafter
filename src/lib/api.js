@@ -35,11 +35,11 @@ export async function generateDraft(answers) {
 }
 
 // One conversational turn. Returns { reply, readyToDraft }.
-export async function sendChat(messages) {
+export async function sendChat(messages, options = {}) {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: jsonHeaders(),
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, ...options }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
@@ -48,11 +48,11 @@ export async function sendChat(messages) {
 
 // Drafts a full project request from a chatbot conversation transcript.
 // Returns { draft, id } — id is the saved conversation row id.
-export async function generateDraftFromChat(messages) {
+export async function generateDraftFromChat(messages, options = {}) {
   const res = await fetch('/api/draft', {
     method: 'POST',
     headers: jsonHeaders(),
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, ...options }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
@@ -154,7 +154,7 @@ function embeddingHostname() {
 
 export function bubbleWorkflowBaseForHost(hostname = '') {
   return String(hostname).toLowerCase() === STAGING_WEBFLOW_HOST
-    ? 'https://admin-83903.bubbleapps.io/version-test/api/1.1/wf'
+    ? 'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf'
     : 'https://admin-83903.bubbleapps.io/api/1.1/wf'
 }
 
@@ -162,6 +162,14 @@ const BUBBLE_WORKFLOW_BASE = bubbleWorkflowBaseForHost(embeddingHostname())
 
 const CREATE_USER_AND_DRAFT_URL =
   `${BUBBLE_WORKFLOW_BASE}/webhook-create-user-and-draft-project`
+
+const EXISTING_USER_DRAFT_URL =
+  `${BUBBLE_WORKFLOW_BASE}/webhook-draft-project`
+
+// The dedicated Bubble-app embed remains tied to its versioned workflow. The
+// Webflow login popup uses EXISTING_USER_DRAFT_URL above, selected by host.
+const BUBBLE_EMBED_DRAFT_URL =
+  'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf/webhook-draft-project'
 
 // The Bubble workflow types several params as Option Sets / Date / number, so
 // the free-text draft values must be coerced to match before sending.
@@ -290,7 +298,9 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     location: profile.location ?? '',
   }
   return {
-    email,
+    // Existing-user Bubble embeds identify the signed-in user by Bubble's
+    // unique id instead of sending or exposing their email.
+    ...(contact.userId ? { u: contact.userId } : { email }),
     ai_drafter_token: aiDrafterToken,
     // Every draft that reaches this endpoint came out of the AI drafter, so this
     // is constant here. It exists so the web app can tell these apart from
@@ -375,6 +385,9 @@ function after(ms, value) {
 // carrying whatever session it wants to hand over. We never construct that URL
 // ourselves.
 const LOGIN_WORKFLOW_URL =
+  `${BUBBLE_WORKFLOW_BASE}/log-in`
+
+const EXISTING_USER_LOGIN_URL =
   `${BUBBLE_WORKFLOW_BASE}/log-in`
 
 // Same ceiling as the duplicate check. Past it we stop waiting and fall back to
@@ -471,13 +484,25 @@ export async function fetchLoginRedirect(email, password) {
   }
 }
 
+// Login from the existing-account modal uses the explicitly versioned Bubble
+// workflow. It waits for Bubble's one-shot navigation link before returning.
+export async function loginWithCredentials(email, password) {
+  const { url, retryable } = await loginAttempt(email, password, EXISTING_USER_LOGIN_URL)
+  if (url) return url
+  throw new Error(
+    retryable
+      ? 'The email or password you entered is incorrect.'
+      : 'Unable to log in right now. Please try again.',
+  )
+}
+
 // One call. Returns { url } on success, or { retryable } explaining whether a
 // second attempt is worth making.
-async function loginAttempt(email, password) {
+async function loginAttempt(email, password, workflowUrl = LOGIN_WORKFLOW_URL) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS)
   try {
-    const res = await fetch(LOGIN_WORKFLOW_URL, {
+    const res = await fetch(workflowUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -547,6 +572,25 @@ export function submitDraftSignup(email, draft, contact = {}) {
   // The token is still sent to the workflow in the payload, but the caller has
   // no use for it now that the redirect carries no query string.
   return { outcome }
+}
+
+// Existing users submit the same normalized payload as sign-up, but to the
+// workflow that initializes a draft for an account that already exists.
+export async function submitDraftLogin(email, draft, contact = {}, { bubbleEmbed = false } = {}) {
+  const aiDrafterToken = generateDrafterToken()
+  const body = JSON.stringify(buildSubmissionPayload(email, draft, contact, aiDrafterToken))
+  const workflowUrl = bubbleEmbed ? BUBBLE_EMBED_DRAFT_URL : EXISTING_USER_DRAFT_URL
+  const res = await fetch(workflowUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: new Blob([body]).size <= KEEPALIVE_MAX_BYTES,
+  })
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(errorMessageOf(data) || `Unable to submit the project (${res.status}).`)
+  }
 }
 
 export async function checkHealth() {

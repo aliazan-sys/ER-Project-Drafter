@@ -4,6 +4,7 @@ import GuidedDrafter from './components/GuidedDrafter.jsx'
 import ChatAgent from './components/ChatAgent.jsx'
 import HistoryPage from './components/HistoryPage.jsx'
 import DraftPage from './components/DraftPage.jsx'
+import BubbleDraftPage from './components/BubbleDraftPage.jsx'
 import FunnelPage from './components/FunnelPage.jsx'
 
 // Tiny hash router so each experience has a shareable link:
@@ -22,10 +23,12 @@ function routeFromHash() {
 }
 
 // ?embed=1      → chat bubble widget (existing)
-// ?embed=draft  → Project Drafter full-page iframe for Webflow ai_drafter page
+// ?embed=draft  → original Project Drafter iframe for Webflow
+// ?embed=bubble → separate existing-user Project Drafter for the Bubble app
 const params = new URLSearchParams(window.location.search)
 const EMBED = params.get('embed') === '1'
 const EMBED_DRAFT = params.get('embed') === 'draft'
+const EMBED_BUBBLE = params.get('embed') === 'bubble'
 
 export default function App() {
   const [route, setRoute] = useState(routeFromHash)
@@ -56,6 +59,16 @@ export default function App() {
     return (
       <div className="app wide">
         <DraftPage key="draft-embed" />
+      </div>
+    )
+  }
+
+  // Bubble gets an isolated existing-user submission flow. It deliberately
+  // shares the drafter UI while keeping its review CTA/auth behavior separate.
+  if (EMBED_BUBBLE) {
+    return (
+      <div className="app wide">
+        <BubbleDraftPage key="bubble-draft-embed" />
       </div>
     )
   }

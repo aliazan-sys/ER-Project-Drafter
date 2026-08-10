@@ -14,7 +14,9 @@ export default async function handler(req, res) {
     // Vercel parses JSON bodies automatically, but guard for string bodies too.
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     const draft = body.messages
-      ? await generateDraftFromConversation(body.messages)
+      ? await generateDraftFromConversation(body.messages, {
+          skipOrgProfile: body.skipOrgProfile === true,
+        })
       : await generateDraft(body.answers)
 
     const mode = body.messages ? 'chat' : 'guided'

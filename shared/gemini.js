@@ -102,7 +102,7 @@ export const responseSchema = {
   required: ['title', 'categories', 'description', 'scope', 'budget', 'orgProfile'],
 }
 
-const buildSystemInstruction = (today) => `You are the "EqualReach Project Request Drafter".
+const buildSystemInstruction = (today, { skipOrgProfile = false } = {}) => `You are the "EqualReach Project Request Drafter".
 Today's date is ${today}. Treat this as "now" — every date you produce
 (start dates, completion dates, timelines) MUST be in the future relative to it,
 and any year you mention must be ${today.slice(-4)} or later. Never use a past year.
@@ -113,6 +113,9 @@ request draft, filling EVERY field with thoughtful, specific, realistic content 
 never leave a field blank and never write placeholder text like "N/A" or "TBD".
 
 Guidelines:
+${skipOrgProfile
+  ? '- EXISTING-USER MODE: do not ask for, infer, or include organization/individual profile information. Return every orgProfile string as "" because Bubble already has that user data.'
+  : ''}
 - title: short, clear, outcome-oriented (max ~8 words).
 - categories: 1-${MAX_CATEGORIES} categories copied VERBATIM from this fixed list —
   never invent, reword, split, merge or abbreviate one, and never emit a value
@@ -195,7 +198,7 @@ export const chatResponseSchema = {
   required: ['reply', 'readyToDraft', 'suggestions'],
 }
 
-const buildChatSystemInstruction = (today) => `You are a project intake assistant for EqualReach. Today is ${today}.
+const buildChatSystemInstruction = (today, { skipOrgProfile = false } = {}) => `You are a project intake assistant for EqualReach. Today is ${today}.
 
 You need to collect all of the following fields before drafting:
 1. Description — what the project is and what needs to be done
@@ -203,7 +206,7 @@ You need to collect all of the following fields before drafting:
 3. Budget — how much they plan to spend and preferred pricing type
 4. Goals — what success looks like for this project
 5. Additional information — any specific skills, tools, constraints, or assets relevant to the project
-6. Submitter profile — whether the user is submitting as an Individual or on behalf of an Organisation; Location is required for both, and Organisation name is required for an Organisation
+${skipOrgProfile ? '' : '6. Submitter profile — whether the user is submitting as an Individual or on behalf of an Organisation; Location is required for both, and Organisation name is required for an Organisation'}
 
 Rules:
 - Before every reply, read the full conversation and mark which fields are already covered — explicitly or implicitly.
@@ -223,7 +226,9 @@ Rules:
   - "total", "in total", "one-off", "fixed", "flat" or a lone lump sum -> Fixed Price
   Only ask about pricing type if the amount is given with no wording that implies one. When you do ask about pricing type, always list the options in parentheses, e.g. "What pricing structure works best for you (per unit, monthly rate, fixed price, or not sure)?" — a user would not otherwise know which pricing structures are available.
 - Field 5 is optional — if nothing relevant is missing, skip it.
-- Field 6 (submitter profile) is a short branching conversation at the end of
+${skipOrgProfile ? `- This is an existing signed-in Bubble user. Bubble already has their profile.
+  Never ask whether they are an Individual or Organisation, and never ask for
+  their organization name, Type, Size, Industry, address, base, or Location.` : `- Field 6 (submitter profile) is a short branching conversation at the end of
   intake. Never combine it into one question and never ask for organisation Type,
   Size or Industry.
   1. First ask exactly: "Are you submitting as an individual or on behalf of an organisation?"
@@ -244,7 +249,7 @@ Rules:
      the signup form. Type, Size and Industry remain optional and must not delay drafting.
   If the user volunteers Type, Size or Industry while answering any question,
   preserve those details for the draft even though you do not ask for them.
-  Never set readyToDraft in the same turn that you ask either profile question.
+  Never set readyToDraft in the same turn that you ask either profile question.`}
 
 STRICT OUTPUT RULE — your reply must be ONLY the next question (or the closing line). Nothing before it, nothing after it.
 Forbidden — never output any of the following:
@@ -271,15 +276,17 @@ SUGGESTIONS — alongside the question, return 2-4 plausible answers to it that 
 - Keep them to 1-4 words so they fit on a chip: "Financial literacy", "£3,000 - £5,000", "Monthly rate".
 - Make them genuinely different from each other, and tailor them to this project — never generic filler.
 - The last one should always be an escape hatch such as "Not sure yet" when the question is one a user could reasonably not have decided on.
-- Never provide suggestions when asking for an organisation's name or location;
-  those values must be typed manually by the user.
+${skipOrgProfile ? '' : `- Never provide suggestions when asking for an organisation's name or location;
+  those values must be typed manually by the user.`}
 - When readyToDraft is true, return an empty suggestions array.
 
-Only set readyToDraft to true once the required project fields (1-4) are covered
+${skipOrgProfile
+  ? 'Only set readyToDraft to true once the required project fields (1-4) are covered. Then reply with exactly: "Drafting your project request now."'
+  : `Only set readyToDraft to true once the required project fields (1-4) are covered
 AND the profile branch is complete: an Individual has received and answered or
 declined the single location follow-up, or an Organisation has answered the single
 name-and-location follow-up. When
-both hold, set readyToDraft to true and reply with exactly: "Drafting your project request now."
+both hold, set readyToDraft to true and reply with exactly: "Drafting your project request now."`}
 
 Never write the draft itself here. Always reply as JSON { reply, readyToDraft, suggestions }.`
 
@@ -440,12 +447,12 @@ const toContents = (messages) =>
 
 // One conversational turn. `messages` is the full transcript so far (ending with
 // the user's latest message). Returns { reply, readyToDraft }.
-export async function chatReply(messages) {
+export async function chatReply(messages, { skipOrgProfile = false } = {}) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new GeminiError(400, 'Missing "messages" in request body.')
   }
   const result = await callModel({
-    systemText: buildChatSystemInstruction(today()),
+    systemText: buildChatSystemInstruction(today(), { skipOrgProfile }),
     contents: toContents(messages),
     schema: chatResponseSchema,
     temperature: 0.1,
@@ -459,7 +466,7 @@ export async function chatReply(messages) {
     /\borgani[sz]ation(?:'s|’s)?\b/i.test(reply) &&
     (/\bname\b/i.test(reply) || /\blocation\b/i.test(reply) || /\bbased\b/i.test(reply))
 
-  return asksForOrganisationIdentity
+  return !skipOrgProfile && asksForOrganisationIdentity
     ? { ...result, suggestions: [] }
     : result
 }
@@ -524,7 +531,7 @@ export async function generateDraft(answers) {
 }
 
 // Turns a free-form chatbot conversation into a full project draft object.
-export async function generateDraftFromConversation(messages) {
+export async function generateDraftFromConversation(messages, { skipOrgProfile = false } = {}) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new GeminiError(400, 'Missing "messages" in request body.')
   }
@@ -539,11 +546,26 @@ export async function generateDraftFromConversation(messages) {
     transcript +
     '\n\nBased on this whole conversation, draft the full EqualReach project request now.'
 
-  return withResolvedLocation(
-    await callModel({
-      systemText: buildSystemInstruction(today()),
+  const draft = await callModel({
+      systemText: buildSystemInstruction(today(), { skipOrgProfile }),
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       schema: responseSchema,
-    }),
-  )
+    })
+
+  if (skipOrgProfile) {
+    return {
+      ...draft,
+      orgProfile: {
+        submittingAs: '',
+        name: '',
+        type: '',
+        size: '',
+        industry: '',
+        location: '',
+        locationVerified: '',
+      },
+    }
+  }
+
+  return withResolvedLocation(draft)
 }

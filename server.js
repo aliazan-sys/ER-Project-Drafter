@@ -48,7 +48,9 @@ app.post('/api/chat', async (req, res) => {
   try {
     const messages = req.body?.messages
     console.log('\n[/api/chat] messages received:', JSON.stringify(messages, null, 2))
-    const result = await chatReply(messages)
+    const result = await chatReply(messages, {
+      skipOrgProfile: req.body?.skipOrgProfile === true,
+    })
     console.log('[/api/chat] result:', JSON.stringify(result))
     res.json(result)
   } catch (err) {
@@ -64,9 +66,9 @@ app.post('/api/chat', async (req, res) => {
 // then persists the conversation + draft (best-effort).
 app.post('/api/draft', async (req, res) => {
   try {
-    const { messages, answers } = req.body || {}
+    const { messages, answers, skipOrgProfile } = req.body || {}
     const draft = messages
-      ? await generateDraftFromConversation(messages)
+      ? await generateDraftFromConversation(messages, { skipOrgProfile: skipOrgProfile === true })
       : await generateDraft(answers)
 
     const mode = messages ? 'chat' : 'guided'

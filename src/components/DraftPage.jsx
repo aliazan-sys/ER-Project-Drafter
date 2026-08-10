@@ -17,7 +17,7 @@ const STARTERS = [
   'AI annotation & labelling',
 ]
 
-export default function DraftPage() {
+export default function DraftPage({ submissionMode = 'public', existingUserId = '' }) {
   const [chatKey, setChatKey] = useState(0)
 
   function startNewChat() {
@@ -30,13 +30,19 @@ export default function DraftPage() {
   return (
     <div className="draft-layout">
       <div className="draft-main">
-        <ChatPanel key={chatKey} onNewChat={startNewChat} />
+        <ChatPanel
+          key={chatKey}
+          onNewChat={startNewChat}
+          submissionMode={submissionMode}
+          existingUserId={existingUserId}
+        />
       </div>
     </div>
   )
 }
 
-function ChatPanel({ onNewChat }) {
+function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
+  const skipOrgProfile = submissionMode === 'bubble-existing-user'
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [smallScreen, setSmallScreen] = useState(
@@ -86,7 +92,7 @@ function ChatPanel({ onNewChat }) {
   async function buildDraft(convo, doneText) {
     setStatus('drafting')
     try {
-      const { draft: result } = await generateDraftFromChat(convo)
+      const { draft: result } = await generateDraftFromChat(convo, { skipOrgProfile })
       setDraft(result)
       // Fresh content — the old position no longer means anything, so open on
       // Review. Every new draft (first pass or a refine) lands there, with the
@@ -139,7 +145,7 @@ function ChatPanel({ onNewChat }) {
         return
       }
 
-      const { reply, readyToDraft, suggestions: next } = await sendChat(convo)
+      const { reply, readyToDraft, suggestions: next } = await sendChat(convo, { skipOrgProfile })
       const withReply = [...convo, { role: 'bot', text: reply }]
       setMessages(withReply)
       setTimeout(scrollToBottom, 50)
@@ -311,6 +317,8 @@ function ChatPanel({ onNewChat }) {
       {modalOpen && draft && (
         <ProjectDraftModal
           draft={draft}
+          submissionMode={submissionMode}
+          existingUserId={existingUserId}
           onSave={setDraft}
           onRefine={refineWithAI}
           initialStep={draftStep}

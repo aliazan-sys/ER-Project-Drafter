@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   submitDraftSignup,
+  submitDraftLogin,
   fetchLoginRedirect,
+  loginWithCredentials,
   toDateInputValue,
   formatDisplayDate,
   fetchPlaceSuggestions,
@@ -105,6 +107,8 @@ export default function ProjectDraftModal({
   draft,
   onClose,
   onSave,
+  submissionMode = 'public',
+  existingUserId = '',
   // The modal unmounts on close, so a caller that wants the step remembered
   // holds it and seeds us back. Uncontrolled callers land on Review.
   initialStep = REVIEW_STEP_INDEX,
@@ -114,6 +118,7 @@ export default function ProjectDraftModal({
   initialVisited,
   onVisitedChange,
 }) {
+  const bubbleExistingUser = submissionMode === 'bubble-existing-user'
   const [form, setForm] = useState(() => normalize(draft))
   // Clamped: a caller can hand back a step index saved before the step list
   // changed, and an out-of-range one makes STEPS[step] undefined — a blank
@@ -121,7 +126,9 @@ export default function ProjectDraftModal({
   const [step, setStepState] = useState(
     () => Math.min(Math.max(initialStep | 0, 0), STEPS.length - 1),
   )
-  const [signupOpen, setSignupOpen] = useState(false)
+  const [authModal, setAuthModal] = useState(null) // null | signup | login
+  const [bubbleSubmitStatus, setBubbleSubmitStatus] = useState('idle')
+  const [bubbleSubmitError, setBubbleSubmitError] = useState('')
   // Only surfaced once they try to move on, so the form doesn't scold on open.
   const [showDateError, setShowDateError] = useState(false)
   const [showOrgError, setShowOrgError] = useState(false)
@@ -193,11 +200,11 @@ export default function ProjectDraftModal({
     return () => cancelAnimationFrame(frame)
   }, [step, focusTarget])
 
-  const missingOrg = missingOrgFields(form, placesReady)
+  const missingOrg = bubbleExistingUser ? [] : missingOrgFields(form, placesReady)
   // A timeline needs one end or the other — or an "Ongoing" retainer, which has
   // no end date by design.
   const hasDate = Boolean(form.scope.startDate || form.scope.completionDate || form.scope.ongoing)
-  const firstMissing = firstMissingRequiredField(form, placesReady)
+  const firstMissing = firstMissingRequiredField(form, placesReady, bubbleExistingUser)
 
   function close() {
     onSave?.(form)
@@ -227,7 +234,36 @@ export default function ProjectDraftModal({
     // Persist edits, then open the email-capture modal. The actual submit to
     // the EqualReach web app happens from there once we have an email.
     onSave?.(form)
-    setSignupOpen(true)
+    setAuthModal('signup')
+  }
+
+  async function handleBubbleDraft() {
+    if (firstMissing) {
+      if (firstMissing.field === 'timeline') setShowDateError(true)
+      if (firstMissing.field === 'location') setShowOrgError(true)
+      setStep(stepIndex(firstMissing.step))
+      setFocusTarget(firstMissing.field)
+      return
+    }
+    if (!existingUserId || bubbleSubmitStatus === 'submitting') {
+      if (!existingUserId) {
+        setBubbleSubmitError('The signed-in Bubble user ID was not provided to the embed.')
+      }
+      return
+    }
+
+    onSave?.(form)
+    setBubbleSubmitStatus('submitting')
+    setBubbleSubmitError('')
+    try {
+      await submitDraftLogin('', form, { userId: existingUserId }, { bubbleEmbed: true })
+      trackStage('completed')
+      setBubbleSubmitStatus('done')
+      window.parent?.postMessage({ type: 'er-draft-project-complete' }, '*')
+    } catch (err) {
+      setBubbleSubmitStatus('error')
+      setBubbleSubmitError(err.message || 'Unable to draft the project. Please try again.')
+    }
   }
 
   // Generic setters --------------------------------------------------------
@@ -256,7 +292,7 @@ export default function ProjectDraftModal({
             {STEPS.map((s, i) => {
               // A step is "done" once it's been visited and its required
               // inputs are filled — so the check persists when navigating away.
-              const done = i !== step && visited.has(i) && isStepComplete(s.id, form, placesReady)
+              const done = i !== step && visited.has(i) && isStepComplete(s.id, form, placesReady, bubbleExistingUser)
               return (
                 <li
                   key={s.id}
@@ -285,7 +321,7 @@ export default function ProjectDraftModal({
               </button>
               <div className="wiz-step-count">
                 Step {step + 1} of {STEPS.length}
-              {isStepComplete(current.id, form, placesReady) && (
+              {isStepComplete(current.id, form, placesReady, bubbleExistingUser) && (
                 <span className="step-complete-badge">Step Completed</span>
               )}
             </div>
@@ -502,6 +538,7 @@ export default function ProjectDraftModal({
                 set={set}
                 goTo={setStep}
                 missingOrg={showOrgError ? missingOrg : []}
+                hideOrganizationProfile={bubbleExistingUser}
                 onPlacesUnsupported={() => setPlacesReady(false)}
               />
             )}
@@ -517,14 +554,31 @@ export default function ProjectDraftModal({
             {isLast ? (
               <div className="foot-right">
                 <button className="btn plain" onClick={close}>Cancel</button>
-                <button
-                  className={`btn primary ${firstMissing ? 'guidance-disabled' : ''}`}
-                  aria-disabled={Boolean(firstMissing)}
-                  title={firstMissing ? 'Complete the required fields before signing up' : undefined}
-                  onClick={handleSignup}
-                >
-                  Sign up to submit the project <ArrowRightIcon />
-                </button>
+                {bubbleExistingUser ? (
+                  <button
+                    className={`btn primary ${firstMissing ? 'guidance-disabled' : ''}`}
+                    aria-disabled={Boolean(firstMissing)}
+                    disabled={bubbleSubmitStatus === 'submitting' || bubbleSubmitStatus === 'done'}
+                    title={firstMissing ? 'Complete the required fields before drafting the project' : undefined}
+                    onClick={handleBubbleDraft}
+                  >
+                    {bubbleSubmitStatus === 'submitting'
+                      ? 'Drafting project…'
+                      : bubbleSubmitStatus === 'done'
+                        ? 'Project drafted'
+                        : 'Draft a project'}
+                    {bubbleSubmitStatus === 'idle' && <ArrowRightIcon />}
+                  </button>
+                ) : (
+                  <button
+                    className={`btn primary ${firstMissing ? 'guidance-disabled' : ''}`}
+                    aria-disabled={Boolean(firstMissing)}
+                    title={firstMissing ? 'Complete the required fields before signing up' : undefined}
+                    onClick={handleSignup}
+                  >
+                    Sign up to submit the project <ArrowRightIcon />
+                  </button>
+                )}
               </div>
             ) : (
               <button className="btn primary" onClick={goNext}>
@@ -532,11 +586,25 @@ export default function ProjectDraftModal({
               </button>
             )}
           </div>
+          {bubbleExistingUser && bubbleSubmitError && (
+            <p className="signup-error" role="alert">⚠️ {bubbleSubmitError}</p>
+          )}
         </div>
       </div>
 
-      {signupOpen && (
-        <SignupModal draft={form} onClose={() => setSignupOpen(false)} />
+      {!bubbleExistingUser && authModal === 'signup' && (
+        <SignupModal
+          draft={form}
+          onClose={() => setAuthModal(null)}
+          onLogin={() => setAuthModal('login')}
+        />
+      )}
+      {!bubbleExistingUser && authModal === 'login' && (
+        <LoginModal
+          draft={form}
+          onClose={() => setAuthModal(null)}
+          onSignup={() => setAuthModal('signup')}
+        />
       )}
     </div>
   )
@@ -545,7 +613,7 @@ export default function ProjectDraftModal({
 // --- Email capture + submit to the EqualReach web app ---------------------
 const MIN_PASSWORD = 8
 
-function SignupModal({ draft, onClose }) {
+function SignupModal({ draft, onClose, onLogin }) {
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -758,7 +826,7 @@ function SignupModal({ draft, onClose }) {
             </p>
             <p className="signup-fine signup-login">
               Already have an account?{' '}
-              <a href={LOGIN_URL} target="_blank" rel="noopener noreferrer">Log in here</a>.
+              <a href="#login" onClick={(e) => { e.preventDefault(); onLogin() }}>Log in here</a>.
             </p>
           </form>
         )}
@@ -770,7 +838,7 @@ function SignupModal({ draft, onClose }) {
 // --- Review (Step 7) summary, with editable extras ------------------------
 // `missingOrg` carries the labels of blank required org fields, but only once
 // the user has tried to submit — an empty array means "say nothing yet".
-function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
+function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported, hideOrganizationProfile = false }) {
   const org = form.orgProfile
   const adv = form.advancedTerms
   const flagged = (label) => missingOrg.some((p) => p.label === label)
@@ -778,6 +846,7 @@ function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
   const unverifiedLocation = missingOrg.some((p) => p.reason === 'unverified')
   return (
     <Section title="Review" sub="Review your project details and submit when you're ready.">
+      {!hideOrganizationProfile && <>
       <div className="org-head">
         <h4>Your Organization Profile Summary <span className="req">*</span></h4>
         <span className="info-dot" tabIndex={0}>
@@ -830,6 +899,7 @@ function ReviewStep({ form, set, goTo, missingOrg = [], onPlacesUnsupported }) {
           type. Answers like “remote”, “worldwide” or “N/A” can't be accepted.
         </p>
       )}
+      </>}
 
       <SummaryCard title="Project Title" onEdit={() => goTo(stepIndex('title'))}>
         <p className="strong">{form.title || '—'}</p>
@@ -1273,6 +1343,128 @@ function EditChip({ label, value, invalid, onChange }) {
   )
 }
 
+function LoginModal({ draft, onClose, onSignup }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [status, setStatus] = useState('idle')
+  const [error, setError] = useState('')
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const valid = emailValid && password.length > 0
+
+  async function submit(e) {
+    e?.preventDefault()
+    if (!valid || status === 'submitting') return
+    setStatus('submitting')
+    setError('')
+    try {
+      // Fire both Bubble workflows at the same point, but only wait for login.
+      // The payload request uses keepalive, so it can finish after navigation
+      // unloads this page without delaying the redirect.
+      const payloadRequest = submitDraftLogin(email.trim(), draft, { password })
+      const loginRequest = loginWithCredentials(email.trim(), password)
+      void payloadRequest.catch((err) => {
+        console.warn('[login] project payload submission failed:', err)
+      })
+      const url = await loginRequest
+      trackStage('completed')
+
+      if (window.self !== window.top) {
+        try {
+          window.top.location.href = url
+        } catch {
+          /* top navigation blocked — host listener fallback below */
+        }
+        window.parent.postMessage({ type: 'er-navigate', url }, '*')
+      } else {
+        window.location.href = url
+      }
+    } catch (err) {
+      setStatus('error')
+      setError(err.message || 'Unable to log in. Please try again.')
+    }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="signup-card">
+        <button
+          className="icon-btn signup-close"
+          onClick={onClose}
+          aria-label="Close"
+          disabled={status === 'submitting'}
+        >
+          ✕
+        </button>
+
+        <form onSubmit={submit}>
+          <h2 className="signup-title">Log in to EqualReach</h2>
+          <p className="signup-sub">
+            Enter your account details to continue to EqualReach.
+          </p>
+
+          <label className="flabel" htmlFor="login-email">Email address <span className="req">*</span></label>
+          <input
+            id="login-email"
+            className="inp"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            autoComplete="email"
+            autoFocus
+            disabled={status === 'submitting'}
+          />
+
+          <label className="flabel" htmlFor="login-password" style={{ marginTop: 18 }}>Password <span className="req">*</span></label>
+          <div className="pw-wrap">
+            <input
+              id="login-password"
+              className="inp pw-input"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              autoComplete="current-password"
+              disabled={status === 'submitting'}
+            />
+            <button
+              type="button"
+              className="pw-toggle"
+              onClick={() => setShowPassword((value) => !value)}
+              disabled={status === 'submitting'}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
+
+          {status === 'error' && <p className="signup-error">⚠️ {error}</p>}
+
+          <button
+            type="submit"
+            className="btn primary signup-submit"
+            disabled={!valid || status === 'submitting' || status === 'done'}
+          >
+            {status === 'submitting'
+              ? 'Submitting…'
+              : status === 'done'
+                ? 'Project submitted'
+                : 'Log in to submit'}
+          </button>
+
+          <p className="signup-fine signup-login">
+            Don&apos;t have an account?{' '}
+            <a href="#signup" onClick={(e) => { e.preventDefault(); onSignup() }}>Sign up here</a>.
+          </p>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // How long the field stays quiet after a keystroke before asking Google. Each
 // lookup is a billed request, so this is a cost control as much as a UX one:
 // typing "London" fires once, not six times.
@@ -1554,7 +1746,7 @@ function Paragraphs({ text }) {
 
 // Whether a step's mandatory inputs are all filled. Mirrors the `required`
 // fields in each step's markup — keep the two in sync.
-function isStepComplete(id, form, placesReady = true) {
+function isStepComplete(id, form, placesReady = true, skipOrgProfile = false) {
   switch (id) {
     case 'title':
       return Boolean(form.title?.trim())
@@ -1577,7 +1769,7 @@ function isStepComplete(id, form, placesReady = true) {
     case 'review':
       // Review is only complete once the org profile is, since that block is
       // the one thing on this step the user still has to supply.
-      return missingOrgFields(form, placesReady).length === 0
+      return skipOrgProfile || missingOrgFields(form, placesReady).length === 0
     default:
       return false
   }
@@ -1585,7 +1777,7 @@ function isStepComplete(id, form, placesReady = true) {
 
 // Required fields in the same order the wizard presents them. This powers the
 // final button's disabled appearance and its click-to-fix guidance.
-function firstMissingRequiredField(form, placesReady = true) {
+function firstMissingRequiredField(form, placesReady = true, skipOrgProfile = false) {
   if (!form.title?.trim()) return { step: 'title', field: 'title' }
   if (!(form.categories?.length > 0)) return { step: 'skills', field: 'categories' }
   if (!form.scope?.complexity) return { step: 'scope', field: 'complexity' }
@@ -1607,7 +1799,7 @@ function firstMissingRequiredField(form, placesReady = true) {
   }
 
   if (!form.description?.trim()) return { step: 'description', field: 'description' }
-  if (missingOrgFields(form, placesReady).length > 0) {
+  if (!skipOrgProfile && missingOrgFields(form, placesReady).length > 0) {
     return { step: 'review', field: 'location' }
   }
   return null
