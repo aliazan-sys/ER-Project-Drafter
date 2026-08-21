@@ -224,7 +224,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
           <h1 className="chat-welcome-title">Tell me about your project.</h1>
           <p className="chat-welcome-sub">
             Describe what you need in plain words. I'll turn it into a structured project brief (in
-            less than 2 minutes!) so we can match you to vetted teams.
+            less than 3 minutes!) so we can match you to vetted teams.
           </p>
 
           <form onSubmit={handleSend} className="chat-pill-form">
