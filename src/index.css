@@ -21,6 +21,7 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  padding: 0;
 }
 
 body {
@@ -45,13 +46,8 @@ body {
   border-right: 1px solid var(--line);
 }
 
-/* ===================================================================== */
-/* Embed mode = the Webflow chat-bubble widget.                          */
-/* Styling here matches the "EqualReach Chat Widget" design and is        */
-/* scoped to .app.embed so the main-site chatbot is left untouched.       */
-/* Overriding the teal/ink tokens recolors every var(--teal) consumer     */
-/* (bubbles, send button, avatars) to the widget palette for free.        */
-/* ===================================================================== */
+/* Compact Webflow chat-bubble experience. Kept under .app.embed so the
+   full-page drafter and other embeds retain their own layouts. */
 .app.embed {
   max-width: none;
   border-left: none;
@@ -65,7 +61,6 @@ body {
   --bg: #f8fafc;
 }
 
-/* Header: teal sparkle tile + EqualReach / Project Drafter + close. */
 .app.embed .er-head {
   display: flex;
   align-items: center;
@@ -94,31 +89,29 @@ body {
 }
 
 .app.embed .er-head-name {
+  margin: 0;
+  color: var(--ink);
   font-size: 14px;
   font-weight: 700;
-  color: var(--ink);
-  margin: 0;
   line-height: 1.25;
 }
 
 .app.embed .er-head-sub {
-  font-size: 11px;
-  color: #64748b;
   margin: 0;
+  color: #64748b;
+  font-size: 11px;
   line-height: 1.25;
 }
 
 .app.embed .er-head-close {
-  background: none;
-  border: none;
-  cursor: pointer;
   width: 32px;
   height: 32px;
+  border: none;
   border-radius: 8px;
-  display: grid;
-  place-items: center;
+  background: none;
   color: #94a3b8;
   font-size: 15px;
+  cursor: pointer;
 }
 
 .app.embed .er-head-close:hover {
@@ -126,53 +119,50 @@ body {
   color: #475569;
 }
 
-/* Tighter spacing so it reads as a compact widget, not a full page. */
 .app.embed .chat {
   padding: 16px 0;
 }
 
 .app.embed .chat-inner {
-  padding: 0 16px;
-  gap: 14px;
   max-width: none;
   margin: 0;
+  padding: 0 16px;
+  gap: 14px;
 }
 
-.app.embed .msg-bot-text {
+.app.embed .msg-bot-text,
+.app.embed .bubble,
+.app.embed .composer textarea {
   font-size: 13.5px;
 }
 
-.app.embed .bubble {
-  font-size: 13.5px;
-}
-
-/* Composer — full-width pill with an icon send button, identical to the
-   Project Drafter. The pill itself comes from the shared .composer-pill /
-   .chat-pill-send rules; only compact sizing is tweaked here. */
 .app.embed .composer {
   padding: 12px 14px;
 }
 
 .app.embed .composer textarea {
-  font-size: 13.5px;
   max-height: 120px;
 }
 
 .app.embed .composer-hint {
-  font-size: 11px;
   color: #cbd5e1;
+  font-size: 11px;
 }
 
-/* "Preview project draft" → design's full-width deep-teal CTA. */
 .app.embed .reopen {
   width: 100%;
+  border: none;
   background: #0e7c82;
   color: #fff;
-  border: none;
 }
 
 .app.embed .reopen:hover {
   background: #073b3e;
+}
+
+.app.embed .chat-pill-send {
+  width: 32px;
+  height: 32px;
 }
 
 /* ---------- Global navbar ---------- */
@@ -184,11 +174,13 @@ body {
   padding: 14px 22px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+  flex-shrink: 0;
 }
 
 .nav-links {
   display: flex;
   gap: 6px;
+  overflow-x: auto;
 }
 
 .nav-link {
@@ -200,6 +192,7 @@ body {
   border-radius: 999px;
   border: 1px solid transparent;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -211,6 +204,335 @@ body {
   background: rgba(21, 151, 165, 0.1);
   color: var(--teal-dark);
   border-color: rgba(21, 151, 165, 0.25);
+}
+
+.nav-button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ---------- Admin access ---------- */
+.admin-access {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px 20px;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(21, 151, 165, 0.1), transparent 30%),
+    #f8fafb;
+}
+
+.admin-login-card {
+  width: min(100%, 430px);
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.admin-login-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  background: var(--teal);
+  color: #fff;
+  font-size: 24px;
+}
+
+.admin-login-card h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 27px;
+}
+
+.admin-login-card > p {
+  margin: 9px 0 24px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.admin-login-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.admin-login-field input {
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+}
+
+.admin-login-field input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(21, 151, 165, 0.12);
+}
+
+.admin-login-error {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.admin-login-submit {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 22px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--teal);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-login-submit:hover:not(:disabled) {
+  background: var(--teal-dark);
+}
+
+.admin-login-submit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.admin-shell {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #f8fafb;
+}
+
+.admin-sidebar {
+  display: flex;
+  flex: 0 0 248px;
+  flex-direction: column;
+  min-width: 0;
+  padding: 24px 16px 18px;
+  background: #0b3038;
+  color: #fff;
+}
+
+.admin-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 8px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  text-decoration: none;
+}
+
+.admin-sidebar-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  background: var(--teal);
+  font-size: 21px;
+}
+
+.admin-sidebar-brand > span:last-child,
+.admin-account > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.admin-sidebar-brand strong {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.admin-sidebar-brand small {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+}
+
+.admin-sidebar-nav {
+  display: grid;
+  gap: 7px;
+  margin-top: 24px;
+}
+
+.admin-sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-sidebar-nav a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.admin-sidebar-nav a.active {
+  background: var(--teal);
+  color: #fff;
+}
+
+.admin-sidebar-nav svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.admin-sidebar-footer {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.admin-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 0 7px;
+}
+
+.admin-account-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-account strong {
+  font-size: 12px;
+}
+
+.admin-account small {
+  overflow: hidden;
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-sidebar-footer button,
+.admin-sidebar-footer > a {
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.66);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.admin-sidebar-footer button:hover,
+.admin-sidebar-footer > a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.admin-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+@media (max-width: 760px) {
+  .admin-shell {
+    flex-direction: column;
+  }
+
+  .admin-sidebar {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 12px 14px;
+  }
+
+  .admin-sidebar-brand {
+    padding: 0 14px 0 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: 0;
+  }
+
+  .admin-sidebar-brand > span:last-child,
+  .admin-sidebar-footer {
+    display: none;
+  }
+
+  .admin-sidebar-nav {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin: 0;
+  }
+
+  .admin-sidebar-nav a {
+    min-height: 40px;
+    padding: 8px 11px;
+  }
+}
+
+@media (max-width: 460px) {
+  .admin-sidebar-nav a {
+    gap: 7px;
+    font-size: 12px;
+  }
 }
 
 /* ---------- Page sub-header ---------- */
@@ -304,6 +626,302 @@ body {
   border-radius: 5px;
 }
 
+/* ---------- Simple AI Drafter ---------- */
+.simple-ai-drafter {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 24px 18px;
+  background: #fff;
+}
+
+.app.wide.marketplace-embed {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.marketplace-embed,
+.marketplace-embed .simple-ai-drafter {
+  width: 100%;
+  max-width: none;
+  border: 0;
+}
+
+.marketplace-embed .simple-ai-drafter {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.marketplace-embed .marketplace-drafter-card {
+  width: 100%;
+  max-width: none;
+}
+
+.marketplace-drafter-card {
+  width: min(100%, 1060px);
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dfe4ea;
+  border-radius: 16px;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06);
+}
+
+.marketplace-drafter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 68px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.marketplace-drafter-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.marketplace-drafter-brand svg {
+  width: 21px;
+  height: 21px;
+  fill: var(--teal);
+}
+
+.marketplace-drafter-brand h1 {
+  margin: 0;
+  color: #071832;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.marketplace-drafter-status {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f3f5f7;
+  color: #263955;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.marketplace-drafter-body {
+  padding: 19px 21px 21px;
+}
+
+.marketplace-search-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid #e1e6ec;
+  border-radius: 999px;
+  background: #fafbfc;
+  color: #30435f;
+  font-size: 14px;
+}
+
+.marketplace-search-context svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: #536b8c;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.marketplace-search-context q {
+  display: inline-flex;
+  gap: 9px;
+  font-style: normal;
+}
+
+.marketplace-search-context q::before,
+.marketplace-search-context q::after {
+  color: #596f8e;
+}
+
+.marketplace-question {
+  max-width: 870px;
+  margin-top: 17px;
+  padding: 13px 18px 14px;
+  border: 1px solid #e0e5ea;
+  border-radius: 14px;
+  background: #f8f9fa;
+  color: #071832;
+  font-size: 18px;
+  line-height: 1.48;
+}
+
+.marketplace-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.marketplace-choices button {
+  max-width: 100%;
+  padding: 8px 15px;
+  border: 1px solid #cbd4df;
+  border-radius: 10px;
+  background: #fff;
+  color: #203552;
+  font: inherit;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.marketplace-choices button:hover {
+  background: #f8fafb;
+}
+
+.simple-ai-drafter-form {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 62px;
+  margin-top: 16px;
+  padding: 7px 16px 7px 20px;
+  background: #fff;
+  border: 1px solid #bdc9d8;
+  border-radius: 11px;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.simple-ai-drafter-form:focus-within {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(21, 151, 165, 0.12);
+}
+
+.simple-ai-drafter-form input {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+}
+
+.simple-ai-drafter-form input::placeholder {
+  color: var(--muted);
+}
+
+.simple-ai-drafter-form button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #203552;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.simple-ai-drafter-form button:hover:not(:disabled) {
+  background: var(--teal);
+  color: #fff;
+}
+
+.simple-ai-drafter-form button svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.simple-ai-drafter-form button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.marketplace-drafter-note {
+  margin: 15px 0 0;
+  color: #5b6e89;
+  font-size: 15px;
+}
+
+.marketplace-drafter-note button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #007d8d;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .simple-ai-drafter {
+    place-items: start center;
+    padding: 16px;
+  }
+
+  .marketplace-drafter-head {
+    align-items: flex-start;
+    padding: 18px;
+  }
+
+  .marketplace-drafter-brand h1 {
+    font-size: 17px;
+  }
+
+  .marketplace-drafter-status {
+    font-size: 13px;
+  }
+
+  .marketplace-drafter-body {
+    padding: 18px;
+  }
+
+  .marketplace-search-context {
+    max-width: 100%;
+    font-size: 14px;
+  }
+
+  .marketplace-question {
+    font-size: 17px;
+  }
+
+  .marketplace-choices button {
+    flex: 1 1 calc(50% - 5px);
+    font-size: 15px;
+  }
+
+  .simple-ai-drafter-form input {
+    font-size: 16px;
+  }
+
+  .marketplace-drafter-note {
+    line-height: 1.5;
+  }
+}
+
 /* ---------- Chat ---------- */
 .chat {
   flex: 1;
@@ -358,9 +976,9 @@ body {
   width: 100%;
 }
 
-.bubble {
-  background: var(--teal);
-  color: #fff;
+.msg.user .bubble {
+  background: #f4f6fa;
+  color: #151515;
   padding: 12px 20px;
   /* ~half the single-line height, so short replies read as full pills while
      wrapped ones keep a sane corner instead of a lozenge. */
@@ -414,6 +1032,33 @@ body {
   flex-direction: column;
   gap: 16px;
   padding: 22px;
+}
+
+.funnel-source-tabs {
+  display: flex;
+  gap: 8px;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+}
+
+.funnel-source-tab {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.funnel-source-tab.active {
+  background: rgba(21, 151, 165, 0.12);
+  color: var(--teal-dark);
 }
 
 /* Headline numbers. auto-fit so four tiles wrap to two rows on narrow screens
@@ -648,12 +1293,12 @@ body {
   letter-spacing: 0.03em;
 }
 
-.mode-badge.chat {
+.mode-badge.website {
   background: rgba(21, 151, 165, 0.1);
   color: var(--teal-dark);
 }
 
-.mode-badge.guided {
+.mode-badge.platform {
   background: #eef2ff;
   color: #4338ca;
 }
@@ -1149,10 +1794,43 @@ body {
   margin-top: 18px;
 }
 
+.signup-submit:disabled,
+.signup-submit:disabled:hover {
+  background: #a8c9c5;
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 0.72;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
 .signup-error {
   color: #b91c1c;
   font-size: 13px;
   margin: 10px 0 0;
+}
+
+.signup-news-optin {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.signup-news-optin input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
+.signup-news-optin input:disabled {
+  cursor: not-allowed;
 }
 
 /* Password field: the Show/Hide control sits inside the input, so the input
@@ -1188,12 +1866,6 @@ body {
 .pw-toggle:disabled {
   color: var(--muted);
   cursor: not-allowed;
-}
-
-.signup-hint {
-  color: var(--ink-soft);
-  font-size: 12px;
-  margin: 6px 0 0;
 }
 
 .signup-fine {
@@ -2119,6 +2791,32 @@ button.edit-pencil {
   border-right: none;
 }
 
+/* Bubble owns the surrounding page layout. Keep the embedded application
+   full-bleed so the HTML element adds no second inset around the drafter. */
+.app.wide.bubble-drafter,
+.app.wide.bubble-drafter .draft-layout,
+.app.wide.bubble-drafter .draft-main {
+  margin: 0;
+  padding: 0;
+}
+
+/* The existing-user review is an in-app workspace, not a floating marketing
+   modal. In Bubble it fills the iframe with no overlay gutter on any side. */
+.app.wide.bubble-drafter .modal-overlay {
+  padding: 0;
+}
+
+.app.wide.bubble-drafter .wiz {
+  width: min(960px, calc(100% - 24px));
+  max-width: 960px;
+  height: calc(100% - 24px);
+  max-height: calc(100vh - 24px);
+  margin: 0;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  transform: none;
+}
+
 /* ── Two-panel shell ── */
 .draft-layout {
   display: flex;
@@ -2376,6 +3074,58 @@ button.edit-pencil {
   bottom: 8%;
 }
 
+.website-drafter-return {
+  position: absolute;
+  z-index: 3;
+  top: clamp(12px, 2vw, 18px);
+  left: clamp(12px, 2.4vw, 24px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(21, 151, 165, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--teal-dark);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+}
+
+.website-drafter-return:hover {
+  border-color: rgba(21, 151, 165, 0.5);
+  color: var(--ink);
+}
+
+.chat-panel-shell > .website-drafter-return + .chat {
+  padding-top: 64px;
+}
+
+/* Platform-only canvas. The Website Drafter intentionally keeps its teal
+   gradient and decorative rings. */
+.platform-drafter {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.platform-drafter .draft-layout,
+.platform-drafter .draft-main,
+.platform-drafter .chat-panel-shell {
+  background: #fff;
+}
+
+.platform-drafter .chat-panel-shell::before,
+.platform-drafter .chat-panel-shell::after {
+  display: none;
+}
+
 /* ── Welcome / empty state ── */
 .chat-welcome {
   position: relative;
@@ -2424,12 +3174,15 @@ button.edit-pencil {
 /* Pill input — welcome state */
 .chat-pill-form {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   width: 100%;
   max-width: 860px;
   background: #fff;
   border: 2px solid rgba(21, 151, 165, 0.4);
-  border-radius: 999px;
+  /* A fixed radius keeps wrapped/pasted briefs inside the curved edge. A
+     capsule radius grows with the textarea and cuts into its first/last lines. */
+  border-radius: 28px;
+  overflow: hidden;
   padding: 9px 9px 9px 26px;
   gap: 10px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -2442,6 +3195,9 @@ button.edit-pencil {
 
 .chat-pill-form textarea {
   flex: 1;
+  align-self: center;
+  min-width: 0;
+  max-width: 100%;
   background: transparent;
   border: none;
   outline: none;
@@ -2452,6 +3208,8 @@ button.edit-pencil {
   padding: 0;
   line-height: 1.5;
   overflow-y: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat-pill-form textarea::placeholder {
@@ -2582,15 +3340,21 @@ button.edit-pencil {
 
 /* ── Pill override for active composer ── */
 .composer-pill {
-  border-radius: 999px !important;
+  border-radius: 28px !important;
   padding: 9px 9px 9px 26px !important;
-  align-items: center !important;
+  align-items: flex-end !important;
   background: #fff !important;
   max-width: 900px;
+  overflow: hidden;
 }
 
 .composer-pill textarea {
+  align-self: center;
+  min-width: 0;
+  max-width: 100%;
   overflow-y: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 16px;
 }
 
@@ -2619,12 +3383,6 @@ button.edit-pencil {
    large one here is pure dead space between the last message and the input. */
 .chat-panel-shell .chat {
   padding: 24px 24px 8px;
-}
-
-/* The bubble widget is compact — keep its send button small. */
-.app.embed .chat-pill-send {
-  width: 32px;
-  height: 32px;
 }
 
 /* =====================================================================
@@ -2793,6 +3551,20 @@ button.edit-pencil {
     max-height: calc(100vh - 24px);
     max-height: calc(100dvh - 24px);
     overflow-y: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .navbar {
+    padding: 8px 12px;
+  }
+
+  .navbar .brand {
+    display: none;
+  }
+
+  .nav-links {
+    width: 100%;
   }
 }
 

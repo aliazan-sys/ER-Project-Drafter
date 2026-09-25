@@ -7,37 +7,26 @@ import { Message } from './Message.jsx'
 const GREETING =
   "Hi! I'm your EqualReach project assistant. 👋 Tell me about your project — in your own words is perfectly fine. I'll ask a few quick questions, then draft a full project request for you!"
 
-// In the embedded chat-bubble widget the header gets a close button that tells
-// the host page (the Webflow launcher script) to collapse the iframe panel.
-const EMBED = new URLSearchParams(window.location.search).get('embed') === '1'
 const closeEmbed = () => window.parent?.postMessage({ type: 'er-chat-close' }, '*')
 
-// A free-form chatbot: the user describes their project, the AI asks a few
-// relevant follow-up questions (and explains anything they're unsure about),
-// then drafts the full project request once it has enough detail.
-export default function ChatAgent({ onDraftSaved } = {}) {
+export default function ChatAgent() {
   const [messages, setMessages] = useState([{ role: 'bot', text: GREETING }])
   const [input, setInput] = useState('')
-  // chatting | thinking | drafting | done | error
   const [status, setStatus] = useState('chatting')
   const [draft, setDraft] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [error, setError] = useState('')
-  // Held out here (like the full drafter) so the wizard resumes its step and
-  // keeps its completed-step checkmarks after the modal closes and reopens.
   const [draftStep, setDraftStep] = useState(REVIEW_STEP_INDEX)
   const [draftVisited, setDraftVisited] = useState([])
-  // Tappable answers to the question the assistant just asked.
   const [suggestions, setSuggestions] = useState([])
-
   const scrollRef = useRef(null)
   const textareaRef = useRef(null)
+
+  const busy = status === 'thinking' || status === 'drafting'
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, status])
 
-  // Grow the input with its content (up to a cap), like the Project Drafter.
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
@@ -47,57 +36,47 @@ export default function ChatAgent({ onDraftSaved } = {}) {
     el.style.overflowY = el.scrollHeight > 120 ? 'auto' : 'hidden'
   }, [input])
 
-  // In the embedded widget the draft modal can't visually escape the small
-  // iframe, so ask the host launcher to expand the panel to full screen while
-  // the draft is open, and collapse it back to the bubble when it closes.
   useEffect(() => {
-    if (!EMBED) return
     window.parent?.postMessage({ type: modalOpen ? 'er-expand' : 'er-collapse' }, '*')
   }, [modalOpen])
 
-  const busy = status === 'thinking' || status === 'drafting'
-
-  async function buildDraft(convo) {
+  async function buildDraft(conversation) {
     setStatus('drafting')
     try {
-      const { draft: result, id } = await generateDraftFromChat(convo)
+      const { draft: result } = await generateDraftFromChat(conversation, {
+        drafterSource: 'website',
+      })
       setDraft(result)
-      // Fresh draft — open on Review, matching the full Project Drafter.
       setDraftStep(REVIEW_STEP_INDEX)
       setDraftVisited([])
       setStatus('done')
       setModalOpen(true)
-      setMessages((m) => [
-        ...m,
+      setMessages((current) => [
+        ...current,
         { role: 'bot', text: '✅ Your project request draft is ready — opening the preview now.' },
       ])
-      onDraftSaved?.(id)
-    } catch (err) {
+    } catch (error) {
       setStatus('error')
-      setError(err.message || 'Something went wrong.')
-      setMessages((m) => [
-        ...m,
-        { role: 'bot', text: `⚠️ I couldn't generate the draft: ${err.message}` },
+      setMessages((current) => [
+        ...current,
+        { role: 'bot', text: `⚠️ I couldn't generate the draft: ${error.message}` },
       ])
     }
   }
 
-  // The embedded bubble runs the full drafter self-contained: it chats and
-  // opens the draft modal inside the iframe (the host launcher full-screens
-  // the panel on the er-expand message), exactly like the standalone app —
-  // no redirect to a separate Webflow page.
   async function sendMessage(value) {
-    startConversation('chat')
-    const convo = [...messages, { role: 'user', text: value }]
-    setMessages(convo)
+    startConversation('website')
+    const conversation = [...messages, { role: 'user', text: value }]
+    setMessages(conversation)
     setInput('')
     setSuggestions([])
     setStatus('thinking')
-    setError('')
 
     try {
-      const { reply, readyToDraft, suggestions: next } = await sendChat(convo)
-      const withReply = [...convo, { role: 'bot', text: reply }]
+      const { reply, readyToDraft, suggestions: next } = await sendChat(conversation, {
+        drafterSource: 'website',
+      })
+      const withReply = [...conversation, { role: 'bot', text: reply }]
       setMessages(withReply)
 
       if (readyToDraft) {
@@ -106,67 +85,57 @@ export default function ChatAgent({ onDraftSaved } = {}) {
         setSuggestions(Array.isArray(next) ? next.slice(0, 4) : [])
         setStatus('chatting')
       }
-    } catch (err) {
+    } catch (error) {
       setStatus('error')
-      setError(err.message || 'Something went wrong.')
-      setMessages((m) => [
-        ...m,
-        { role: 'bot', text: `⚠️ Sorry, something went wrong: ${err.message}` },
+      setMessages((current) => [
+        ...current,
+        { role: 'bot', text: `⚠️ Sorry, something went wrong: ${error.message}` },
       ])
     }
   }
 
-  async function handleSend(e) {
-    e?.preventDefault()
+  async function handleSend(event) {
+    event?.preventDefault()
     const value = input.trim()
     if (!value || busy || status === 'done') return
     await sendMessage(value)
   }
 
   function restart() {
-    // A new conversation gets its own funnel session.
     resetConversation()
     setMessages([{ role: 'bot', text: GREETING }])
     setInput('')
     setStatus('chatting')
     setDraft(null)
     setModalOpen(false)
-    setError('')
-    setDraftStep(0)
+    setDraftStep(REVIEW_STEP_INDEX)
     setDraftVisited([])
     setSuggestions([])
   }
 
   return (
     <>
-      {EMBED ? (
-        <header className="er-head">
-          <div className="er-head-id">
-            <span className="er-head-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                <path d="M12 2l2.35 6.5L21 10.8l-6.65 2.3L12 20l-2.35-6.9L3 10.8l6.65-2.3z" />
-              </svg>
-            </span>
-            <div>
-              <p className="er-head-name">EqualReach</p>
-              <p className="er-head-sub">Project Drafter</p>
-            </div>
+      <header className="er-head">
+        <div className="er-head-id">
+          <span className="er-head-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M12 2l2.35 6.5L21 10.8l-6.65 2.3L12 20l-2.35-6.9L3 10.8l6.65-2.3z" />
+            </svg>
+          </span>
+          <div>
+            <p className="er-head-name">EqualReach</p>
+            <p className="er-head-sub">Project Drafter</p>
           </div>
-          <button className="er-head-close" onClick={closeEmbed} aria-label="Close chat">✕</button>
-        </header>
-      ) : (
-        <header className="topbar">
-          <div className="page-head">
-            <div className="page-title">AI Chatbot</div>
-            <div className="page-sub">Chat through your idea — I'll ask a few questions, then draft it</div>
-          </div>
-        </header>
-      )}
+        </div>
+        <button className="er-head-close" type="button" onClick={closeEmbed} aria-label="Close chat">
+          ✕
+        </button>
+      </header>
 
       <main className="chat" ref={scrollRef}>
         <div className="chat-inner">
-          {messages.map((m, i) => (
-            <Message key={i} role={m.role} text={m.text} />
+          {messages.map((message, index) => (
+            <Message key={index} role={message.role} text={message.text} />
           ))}
           {status === 'thinking' && <Message role="bot" text="Thinking…" typing />}
           {status === 'drafting' && <Message role="bot" text="Drafting your project…" typing />}
@@ -176,9 +145,14 @@ export default function ChatAgent({ onDraftSaved } = {}) {
       <footer className="composer">
         {suggestions.length > 0 && !busy && status === 'chatting' && (
           <div className="quick-replies">
-            {suggestions.map((s) => (
-              <button key={s} type="button" className="quick-reply" onClick={() => sendMessage(s)}>
-                {s}
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="quick-reply"
+                onClick={() => sendMessage(suggestion)}
+              >
+                {suggestion}
               </button>
             ))}
           </div>
@@ -188,10 +162,10 @@ export default function ChatAgent({ onDraftSaved } = {}) {
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
                 handleSend()
               }
             }}
@@ -210,7 +184,12 @@ export default function ChatAgent({ onDraftSaved } = {}) {
               ↺
             </button>
           ) : (
-            <button type="submit" className="chat-pill-send" disabled={!input.trim() || busy} aria-label="Send">
+            <button
+              type="submit"
+              className="chat-pill-send"
+              disabled={!input.trim() || busy}
+              aria-label="Send"
+            >
               ↑
             </button>
           )}
@@ -218,10 +197,10 @@ export default function ChatAgent({ onDraftSaved } = {}) {
         <div className="composer-hint">
           {status === 'done'
             ? 'Draft ready · reopen the preview below'
-            : "Conversational mode · the assistant decides what to ask"}
+            : 'Conversational mode · the assistant decides what to ask'}
         </div>
         {status === 'done' && (
-          <button className="reopen" onClick={() => setModalOpen(true)}>
+          <button className="reopen" type="button" onClick={() => setModalOpen(true)}>
             Preview project draft
           </button>
         )}
@@ -230,6 +209,7 @@ export default function ChatAgent({ onDraftSaved } = {}) {
       {modalOpen && draft && (
         <ProjectDraftModal
           draft={draft}
+          drafterSource="website"
           onSave={setDraft}
           initialStep={draftStep}
           onStepChange={setDraftStep}

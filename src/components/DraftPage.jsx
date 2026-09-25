@@ -5,6 +5,8 @@ import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
 
+const SERVICES_URL = 'https://app.equalreach.io/version-93726/marketplace/services'
+
 // Openers offered on the empty state — the things people most often arrive at
 // the drafter wanting to do. Order is priority order: the narrow-screen rule in
 // .starter-chips drops from the end, so keep the strongest four first.
@@ -17,7 +19,11 @@ const STARTERS = [
   'AI annotation & labelling',
 ]
 
-export default function DraftPage({ submissionMode = 'public', existingUserId = '' }) {
+export default function DraftPage({
+  submissionMode = 'public',
+  existingUserId = '',
+  drafterSource = 'website',
+}) {
   const [chatKey, setChatKey] = useState(0)
 
   function startNewChat() {
@@ -35,14 +41,19 @@ export default function DraftPage({ submissionMode = 'public', existingUserId = 
           onNewChat={startNewChat}
           submissionMode={submissionMode}
           existingUserId={existingUserId}
+          drafterSource={drafterSource}
         />
       </div>
     </div>
   )
 }
 
-function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
+function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource }) {
   const skipOrgProfile = submissionMode === 'bubble-existing-user'
+  const initialPromptFromQuery = (
+    new URLSearchParams(window.location.search).get('initial_prompt') || ''
+  ).trim().slice(0, 2000)
+  const showBackToServices = drafterSource === 'website' && Boolean(initialPromptFromQuery)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [smallScreen, setSmallScreen] = useState(
@@ -63,6 +74,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
   // Tappable answers to the question the assistant just asked.
   const [suggestions, setSuggestions] = useState([])
   const scrollRef = useRef(null)
+  const initialPromptSentRef = useRef(false)
 
   const busy = status === 'thinking' || status === 'drafting'
   const hasStarted = messages.some((m) => m.role === 'user')
@@ -92,7 +104,10 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
   async function buildDraft(convo, doneText) {
     setStatus('drafting')
     try {
-      const { draft: result } = await generateDraftFromChat(convo, { skipOrgProfile })
+      const { draft: result } = await generateDraftFromChat(convo, {
+        skipOrgProfile,
+        drafterSource,
+      })
       setDraft(result)
       // Fresh content — the old position no longer means anything, so open on
       // Review. Every new draft (first pass or a refine) lands there, with the
@@ -122,7 +137,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
   async function sendMessage(value) {
     // First message of a conversation starts a funnel session; later calls
     // are no-ops. Refining an existing draft therefore stays the same session.
-    startConversation('draft')
+    startConversation(drafterSource)
     const convo = [...messages, { role: 'user', text: value }]
     setMessages(convo)
     setInput('')
@@ -145,7 +160,10 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
         return
       }
 
-      const { reply, readyToDraft, suggestions: next } = await sendChat(convo, { skipOrgProfile })
+      const { reply, readyToDraft, suggestions: next } = await sendChat(convo, {
+        skipOrgProfile,
+        drafterSource,
+      })
       const withReply = [...convo, { role: 'bot', text: reply }]
       setMessages(withReply)
       setTimeout(scrollToBottom, 50)
@@ -192,9 +210,20 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
     await sendMessage(value)
   }
 
+  function backToServices() {
+    if (window.top === window) {
+      window.location.assign(SERVICES_URL)
+      return
+    }
+    window.open(SERVICES_URL, '_top')
+  }
+
   useEffect(() => {
-    const prompt = localStorage.getItem('er_initial_prompt')
+    if (initialPromptSentRef.current) return
+    const storedPrompt = localStorage.getItem('er_initial_prompt')?.trim()
+    const prompt = initialPromptFromQuery || (storedPrompt || '').slice(0, 2000)
     if (!prompt) return
+    initialPromptSentRef.current = true
     localStorage.removeItem('er_initial_prompt')
     sendMessage(prompt)
   }, [])
@@ -214,6 +243,12 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
 
   return (
     <div className="chat-panel-shell">
+      {showBackToServices && (
+        <button className="website-drafter-return" type="button" onClick={backToServices}>
+          <span aria-hidden="true">←</span>
+          Back to services
+        </button>
+      )}
       {!hasStarted ? (
         <div className="chat-welcome">
           <span className="drafter-badge">
@@ -319,6 +354,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId }) {
           draft={draft}
           submissionMode={submissionMode}
           existingUserId={existingUserId}
+          drafterSource={drafterSource}
           onSave={setDraft}
           onRefine={refineWithAI}
           initialStep={draftStep}

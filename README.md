@@ -1,9 +1,8 @@
 # EqualReach AI Prototype
 
-A small React app with a Claude-style chat interface. The chatbot asks you
-**4 short questions**, then uses **Google Gemini** to draft a complete
-EqualReach *Project Request* — filling every field — and previews it in a popup
-(mirrors the 7-step reference form).
+A React app with dedicated Website and Platform Project Drafter experiences.
+Each uses **Google Gemini** to turn a plain-language project description into a
+complete EqualReach *Project Request* and previews it in an editable wizard.
 
 ## How the API key is kept safe
 
@@ -65,10 +64,10 @@ proxy as a serverless function (`api/draft.js`), so the key stays server-side.
 
 ## Saving conversations & drafts (Supabase)
 
-Every draft you create — on the **Guided Drafter** or the **AI Chatbot** — is
-saved to a Postgres database along with its conversation transcript, and listed
-on the **Saved Projects** page (`#/history`). This is **optional**: if no
-database is configured the app runs fine and just skips saving.
+Every draft you create in the **Website Project Drafter** or **Platform Project
+Drafter** is saved to a Postgres database along with its conversation transcript
+and listed on the **Saved Projects** page (`#/history`). This is **optional**:
+if no database is configured the app runs fine and just skips saving.
 
 Persistence uses one env var, `DATABASE_URL`, pointing at a Supabase Postgres.
 The two tables (`conversations`, `drafts`) are **created automatically** on first
@@ -94,28 +93,26 @@ use — no manual SQL needed.
 ```
 api/
   draft.js                    POST /api/draft         — generate + save a draft
-  chat.js                     POST /api/chat          — one chatbot turn
+  chat.js                     POST /api/chat          — one drafter conversation turn
   conversations.js            GET  /api/conversations — list / fetch saved history
   health.js                   GET  /api/health
 shared/
   gemini.js                   Shared key + prompts + schemas (api/ and server.js)
   store.js                    Postgres persistence (Supabase) — best-effort
 server.js                     LOCAL dev proxy (npm run dev) — reuses shared/
-src/App.jsx                   Navbar + hash router (#/ , #/chat , #/history)
+src/App.jsx                   Navbar + hash router
 src/components/
-  GuidedDrafter.jsx           Original fixed-question flow
-  ChatAgent.jsx               Free-form conversational chatbot
+  DraftPage.jsx               Website Project Drafter
+  PlatformDraftPage.jsx       Platform Project Drafter
   HistoryPage.jsx             Saved Projects list + transcript/draft viewer
-  Message.jsx                 Shared chat bubble
+  Message.jsx                 Shared conversation message
   ProjectDraftModal.jsx       The editable 7-step draft preview wizard
 src/lib/
-  questions.js                The 4 intake questions (guided mode)
   api.js                      Frontend -> /api helpers
 Reference Images/             The original 7-step form screenshots
 ```
 
-## Changing the questions or model
+## Changing the model
 
-- Edit `src/lib/questions.js` to change what the bot asks.
 - Set `GEMINI_MODEL` in `.env` (local) or Vercel env vars (prod).
 - The output JSON shape lives in `shared/gemini.js` (`responseSchema`).

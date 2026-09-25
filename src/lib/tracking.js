@@ -41,8 +41,8 @@ function write(key, slot, value) {
 // Starts tracking a conversation, if one isn't already being tracked. Safe to
 // call on every message: only the first call in a conversation creates a
 // session, so callers don't need to detect "is this the first message?".
-// `mode` records which experience it came from: 'draft' | 'chat' | 'guided'.
-export function startConversation(mode = 'chat') {
+// `mode` records which drafter experience the session came from.
+export function startConversation(mode = 'draft') {
   if (read(SESSION_KEY, 'session')) return
   write(MODE_KEY, 'mode', mode)
   write(SESSION_KEY, 'session', newSessionId())

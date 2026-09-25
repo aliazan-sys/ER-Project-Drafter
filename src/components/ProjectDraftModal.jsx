@@ -55,9 +55,9 @@ const COMPLEXITY = [
 
 const PRIVACY_URL =
   'https://equalreach.notion.site/EqualReach-Privacy-Policy-2025-25da08da675980cbb7bffca7683ba7e0'
-// NOTE: same URL as the privacy policy — supplied that way. Point this at the
-// real terms page once it exists.
-const TERMS_URL = PRIVACY_URL
+const TERMS_URL =
+  'https://equalreach.notion.site/EqualReach-Terms-of-Service-2025-b1f8f4dec14c48c3b04b9b7f86038ddd'
+const BUBBLE_PROPOSALS_URL = 'https://app.equalreach.io/client/proposals'
 
 const PRICING = ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure']
 // Icon per pricing type, shown on the price cards (Investment step).
@@ -109,6 +109,7 @@ export default function ProjectDraftModal({
   onSave,
   submissionMode = 'public',
   existingUserId = '',
+  drafterSource = 'website',
   // The modal unmounts on close, so a caller that wants the step remembered
   // holds it and seeds us back. Uncontrolled callers land on Review.
   initialStep = REVIEW_STEP_INDEX,
@@ -260,6 +261,17 @@ export default function ProjectDraftModal({
       trackStage('completed')
       setBubbleSubmitStatus('done')
       window.parent?.postMessage({ type: 'er-draft-project-complete' }, '*')
+
+      if (window.self !== window.top) {
+        try {
+          window.top.location.href = BUBBLE_PROPOSALS_URL
+        } catch {
+          /* top navigation blocked — host listener fallback below */
+        }
+        window.parent.postMessage({ type: 'er-navigate', url: BUBBLE_PROPOSALS_URL }, '*')
+      } else {
+        window.location.href = BUBBLE_PROPOSALS_URL
+      }
     } catch (err) {
       setBubbleSubmitStatus('error')
       setBubbleSubmitError(err.message || 'Unable to draft the project. Please try again.')
@@ -595,6 +607,7 @@ export default function ProjectDraftModal({
       {!bubbleExistingUser && authModal === 'signup' && (
         <SignupModal
           draft={form}
+          drafterSource={drafterSource}
           onClose={() => setAuthModal(null)}
           onLogin={() => setAuthModal('login')}
         />
@@ -602,6 +615,7 @@ export default function ProjectDraftModal({
       {!bubbleExistingUser && authModal === 'login' && (
         <LoginModal
           draft={form}
+          drafterSource={drafterSource}
           onClose={() => setAuthModal(null)}
           onSignup={() => setAuthModal('signup')}
         />
@@ -613,13 +627,14 @@ export default function ProjectDraftModal({
 // --- Email capture + submit to the EqualReach web app ---------------------
 const MIN_PASSWORD = 8
 
-function SignupModal({ draft, onClose, onLogin }) {
+function SignupModal({ draft, drafterSource, onClose, onLogin }) {
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [organizationName, setOrganizationName] = useState(() => draft?.orgProfile?.name || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [receiveNews, setReceiveNews] = useState(false)
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
   const [error, setError] = useState('')
 
@@ -632,11 +647,16 @@ function SignupModal({ draft, onClose, onLogin }) {
   // Not trimmed: leading/trailing spaces are legitimate password characters,
   // and silently stripping them would break the login they just set up.
   const passwordValid = password.length >= MIN_PASSWORD
+  const submittingAs = String(draft?.orgProfile?.submittingAs || '').trim().toLowerCase()
+  const organizationType = String(draft?.orgProfile?.type || '').trim()
+  const isBusinessSignup =
+    ['business', 'organisation', 'organization'].includes(submittingAs) ||
+    (Boolean(organizationType) && organizationType !== 'Solo Business')
   const valid =
     emailValid &&
     firstName.trim() !== '' &&
     lastName.trim() !== '' &&
-    organizationName.trim() !== '' &&
+    (!isBusinessSignup || organizationName.trim() !== '') &&
     passwordValid
 
   async function submit(e) {
@@ -653,12 +673,18 @@ function SignupModal({ draft, onClose, onLogin }) {
       // duplicate-email verdict, which decides where they land. Anything else
       // — slow workflow, network error — resolves to "proceed" (see
       // submitDraftSignup), so this never blocks for longer than that check.
-      const { outcome } = submitDraftSignup(email.trim(), draft, {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        organizationName: organizationName.trim(),
-        password,
-      })
+      const { outcome } = submitDraftSignup(
+        email.trim(),
+        draft,
+        {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          organizationName: isBusinessSignup ? organizationName.trim() : '',
+          password,
+          receiveNews,
+        },
+        { drafterSource },
+      )
       const verdict = await outcome
       // Show "You're all set!" before logging in, so the success screen covers
       // that second round-trip instead of the button sitting on "Submitting…".
@@ -673,7 +699,7 @@ function SignupModal({ draft, onClose, onLogin }) {
         //
         // Falls back to the plain redirect if the login doesn't answer with a
         // destination — their account and draft are already saved either way.
-        url = (await fetchLoginRedirect(email.trim(), password)) || REDIRECT_URL
+        url = (await fetchLoginRedirect(email.trim(), password, { drafterSource })) || REDIRECT_URL
       }
       if (window.self !== window.top) {
         // Running inside an iframe (the AI Drafter is embedded in the Bubble
@@ -723,7 +749,7 @@ function SignupModal({ draft, onClose, onLogin }) {
 
             <div className="two-col">
               <div>
-                <label className="flabel" htmlFor="signup-first">First name <span className="req">*</span></label>
+                <label className="flabel" htmlFor="signup-first">First Name <span className="req">*</span></label>
                 <input
                   id="signup-first"
                   className="inp"
@@ -732,11 +758,12 @@ function SignupModal({ draft, onClose, onLogin }) {
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="Jane"
                   autoFocus
+                  required
                   disabled={status === 'submitting'}
                 />
               </div>
               <div>
-                <label className="flabel" htmlFor="signup-last">Last name <span className="req">*</span></label>
+                <label className="flabel" htmlFor="signup-last">Last Name <span className="req">*</span></label>
                 <input
                   id="signup-last"
                   className="inp"
@@ -744,24 +771,32 @@ function SignupModal({ draft, onClose, onLogin }) {
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Doe"
+                  required
                   disabled={status === 'submitting'}
                 />
               </div>
             </div>
 
-            <label className="flabel" htmlFor="signup-org" style={{ marginTop: 18 }}>Organization name <span className="req">*</span></label>
-            <input
-              id="signup-org"
-              className="inp"
-              type="text"
-              value={organizationName}
-              onChange={(e) => setOrganizationName(e.target.value)}
-              placeholder="Example Charity"
-              autoComplete="organization"
-              disabled={status === 'submitting'}
-            />
+            {isBusinessSignup && (
+              <>
+                <label className="flabel" htmlFor="signup-org" style={{ marginTop: 18 }}>
+                  Organization Name <span className="req">*</span>
+                </label>
+                <input
+                  id="signup-org"
+                  className="inp"
+                  type="text"
+                  value={organizationName}
+                  onChange={(e) => setOrganizationName(e.target.value)}
+                  placeholder="Your organization name"
+                  autoComplete="organization"
+                  required
+                  disabled={status === 'submitting'}
+                />
+              </>
+            )}
 
-            <label className="flabel" htmlFor="signup-email" style={{ marginTop: 18 }}>Email address <span className="req">*</span></label>
+            <label className="flabel" htmlFor="signup-email" style={{ marginTop: 18 }}>Email Address <span className="req">*</span></label>
             <input
               id="signup-email"
               className="inp"
@@ -770,6 +805,7 @@ function SignupModal({ draft, onClose, onLogin }) {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
               autoComplete="email"
+              required
               disabled={status === 'submitting'}
             />
 
@@ -781,14 +817,14 @@ function SignupModal({ draft, onClose, onLogin }) {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={`At least ${MIN_PASSWORD} characters`}
+                placeholder="Type your password"
                 // new-password, not current-password: this creates the account,
                 // so browsers should offer to generate and save rather than
                 // autofill an existing credential.
                 autoComplete="new-password"
                 minLength={MIN_PASSWORD}
+                required
                 disabled={status === 'submitting'}
-                aria-describedby="signup-password-hint"
               />
               <button
                 type="button"
@@ -801,15 +837,18 @@ function SignupModal({ draft, onClose, onLogin }) {
                 {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
-            <p className="signup-hint" id="signup-password-hint">
-              {/* Only nags once they have started typing — an untouched field
-                  showing an error reads as a complaint about nothing. */}
-              {password && !passwordValid
-                ? `Use at least ${MIN_PASSWORD} characters — that's ${MIN_PASSWORD - password.length} more.`
-                : `This is the password you'll use to log in to EqualReach.`}
-            </p>
-
             {status === 'error' && <p className="signup-error">⚠️ {error}</p>}
+
+            <label className="signup-news-optin" htmlFor="signup-receive-news">
+              <input
+                id="signup-receive-news"
+                type="checkbox"
+                checked={receiveNews}
+                onChange={(e) => setReceiveNews(e.target.checked)}
+                disabled={status === 'submitting'}
+              />
+              <span>I agree to receive news from EqualReach</span>
+            </label>
 
             <button
               type="submit"
@@ -1343,7 +1382,7 @@ function EditChip({ label, value, invalid, onChange }) {
   )
 }
 
-function LoginModal({ draft, onClose, onSignup }) {
+function LoginModal({ draft, drafterSource, onClose, onSignup }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -1362,8 +1401,13 @@ function LoginModal({ draft, onClose, onSignup }) {
       // Fire both Bubble workflows at the same point, but only wait for login.
       // The payload request uses keepalive, so it can finish after navigation
       // unloads this page without delaying the redirect.
-      const payloadRequest = submitDraftLogin(email.trim(), draft, { password })
-      const loginRequest = loginWithCredentials(email.trim(), password)
+      const payloadRequest = submitDraftLogin(
+        email.trim(),
+        draft,
+        { password },
+        { drafterSource },
+      )
+      const loginRequest = loginWithCredentials(email.trim(), password, { drafterSource })
       void payloadRequest.catch((err) => {
         console.warn('[login] project payload submission failed:', err)
       })

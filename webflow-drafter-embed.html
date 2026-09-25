@@ -4,9 +4,7 @@
 <!-- box (Page Settings). Safe site-wide: on pages with no drafter iframe it -->
 <!-- finds nothing and does nothing.                                         -->
 <!--                                                                        -->
-<!-- Does two things, both only where a drafter iframe is present:           -->
-<!--   1. Sizes the frame to the space actually left below the nav.          -->
-<!--   2. Hides the floating chat bubble, redundant on the drafter page.     -->
+<!-- Sizes the frame to the space actually left below the nav.               -->
 <!--                                                                        -->
 <!-- Why this exists: the drafter iframe is given height:100vh, but it       -->
 <!-- starts *below* the Webflow nav. 100vh is the whole window, so the frame -->
@@ -23,12 +21,24 @@
       return Array.prototype.slice.call(document.querySelectorAll('iframe')).filter(function (f) {
         var src = f.getAttribute('src') || '';
         if (src.indexOf('er-project-drafter') === -1 && src.indexOf('embed=draft') === -1) return false;
-        // Never touch the floating chat bubble: its URL is on the same host,
-        // but it is sized to 100% of #er-panel, which manages its own height.
-        // Forcing a viewport height on it would break the popup.
-        if (src.indexOf('embed=1') !== -1) return false;
         if (f.closest && f.closest('#er-panel')) return false;
         return true;
+      });
+    }
+
+    // Carry a Marketplace Drafter handoff from the Webflow page URL into the
+    // cross-origin Vercel iframe. Assign only when the value differs so the
+    // settle loop below never reloads the frame repeatedly.
+    function forwardInitialPrompt() {
+      var prompt = new URLSearchParams(window.location.search).get('initial_prompt');
+      if (!prompt || !prompt.trim()) return;
+      frames().forEach(function (f) {
+        try {
+          var url = new URL(f.src, window.location.href);
+          if (url.searchParams.get('initial_prompt') === prompt) return;
+          url.searchParams.set('initial_prompt', prompt);
+          f.src = url.toString();
+        } catch (_) {}
       });
     }
 
@@ -67,7 +77,15 @@
       (document.head || document.documentElement).appendChild(s);
     }
 
-    function go() { hide(); fit(); }
+    function go() { forwardInitialPrompt(); hide(); fit(); }
+
+    // Browser history belongs to the Webflow page, not its cross-origin
+    // drafter iframe. Handle the drafter's navigation request in the parent.
+    window.addEventListener('message', function (event) {
+      if (event.origin !== 'https://er-project-drafter.vercel.app') return;
+      if (!event.data || event.data.type !== 'er-website-drafter-back') return;
+      window.history.back();
+    });
 
     window.addEventListener('resize', go);
     window.addEventListener('orientationchange', go);

@@ -1,5 +1,5 @@
 // Vercel serverless function — POST /api/chat
-// One conversational turn for the chatbot page. Same origin as the frontend, so
+// One conversational turn for the Project Drafter. Same origin as the frontend, so
 // the browser calls /api/chat and the key (a Vercel Environment Variable) never
 // leaves the server.
 import { chatReply, GeminiError } from '../shared/gemini.js'
@@ -15,6 +15,7 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     const result = await chatReply(body.messages, {
       skipOrgProfile: body.skipOrgProfile === true,
+      drafterSource: body.drafterSource,
     })
     return res.status(200).json(result)
   } catch (err) {

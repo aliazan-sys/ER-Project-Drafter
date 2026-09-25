@@ -45,11 +45,12 @@ function ensureSchema() {
         CREATE TABLE IF NOT EXISTS conversations (
           id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           visitor_id text,
-          mode       text NOT NULL DEFAULT 'chat',
+          mode       text NOT NULL DEFAULT 'website',
           messages   jsonb NOT NULL DEFAULT '[]'::jsonb,
           created_at timestamptz NOT NULL DEFAULT now()
         );
         ALTER TABLE conversations ADD COLUMN IF NOT EXISTS visitor_id text;
+        ALTER TABLE conversations ALTER COLUMN mode SET DEFAULT 'website';
         CREATE INDEX IF NOT EXISTS conversations_visitor_idx ON conversations(visitor_id);
         CREATE TABLE IF NOT EXISTS drafts (
           id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -166,32 +167,47 @@ export async function recordStage({ sessionId, stage, mode, visitorId }) {
   }
 }
 
-// The one-row funnel summary, for /api/funnel. Null when unavailable.
+// Funnel summaries split by drafter source. Historical/unknown modes belong to
+// Website, while explicitly tagged Platform sessions remain independent.
 export async function funnelSummary() {
   if (!isConfigured()) return null
   try {
     await ensureFunnelSchema()
-    const { rows } = await pool().query('SELECT * FROM funnel_summary')
-    return rows[0] || null
+    const { rows } = await pool().query(`
+      SELECT
+        CASE WHEN mode = 'platform' THEN 'platform' ELSE 'website' END AS source,
+        count(*)                                        AS conversations_started,
+        count(*) FILTER (WHERE stage = 'conversation')  AS left_in_conversation,
+        count(*) FILTER (WHERE stage = 'review')        AS left_in_review,
+        count(*) FILTER (WHERE stage = 'signup')        AS left_in_signup,
+        count(*) FILTER (WHERE stage = 'completed')     AS completed,
+        count(DISTINCT visitor_id)                      AS unique_visitors
+      FROM funnel_sessions
+      WHERE environment = 'production'
+      GROUP BY CASE WHEN mode = 'platform' THEN 'platform' ELSE 'website' END
+    `)
+    const empty = {
+      conversations_started: '0',
+      left_in_conversation: '0',
+      left_in_review: '0',
+      left_in_signup: '0',
+      completed: '0',
+      unique_visitors: '0',
+    }
+    return {
+      website: rows.find((row) => row.source === 'website') || { ...empty, source: 'website' },
+      platform: rows.find((row) => row.source === 'platform') || { ...empty, source: 'platform' },
+    }
   } catch (err) {
     console.error('[store] funnelSummary failed:', err.message)
     return null
   }
 }
 
-// Normalises the guided form's { question: answer } map into the same
-// [{ role, text }] message shape the chatbot produces.
-export function answersToMessages(answers = {}) {
-  return Object.entries(answers).flatMap(([q, a]) => [
-    { role: 'bot', text: String(q) },
-    { role: 'user', text: a ? String(a) : '(no answer)' },
-  ])
-}
-
 // Saves a conversation and its generated draft. Returns the new conversation id,
 // or null when storage isn't configured. Never throws — persistence is
 // best-effort and must not break draft generation.
-export async function saveSubmission({ mode = 'chat', messages = [], draft, visitorId }) {
+export async function saveSubmission({ mode = 'website', messages = [], draft, visitorId }) {
   if (!isConfigured() || !draft) return null
   try {
     await ensureSchema()

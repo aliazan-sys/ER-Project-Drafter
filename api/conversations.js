@@ -2,6 +2,7 @@
 //   GET /api/conversations          → list of saved conversations (summaries)
 //   GET /api/conversations?id=<id>  → one conversation's transcript + draft
 import { listConversations, getConversation } from '../shared/store.js'
+import { requireAdmin } from '../shared/adminAuth.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -9,15 +10,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  if (!(await requireAdmin(req, res))) return
+
   try {
-    const visitorId = req.headers['x-visitor-id'] || null
     const id = req.query?.id
     if (id) {
       const row = await getConversation(id)
       if (!row) return res.status(404).json({ error: 'Not found' })
       return res.status(200).json({ conversation: row })
     }
-    return res.status(200).json({ conversations: await listConversations(visitorId) })
+    return res.status(200).json({ conversations: await listConversations() })
   } catch (err) {
     return res.status(500).json({ error: 'Could not load conversations.', detail: String(err) })
   }

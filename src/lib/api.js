@@ -23,17 +23,6 @@ function jsonHeaders() {
   return { 'Content-Type': 'application/json', 'X-Visitor-ID': getVisitorId() }
 }
 
-export async function generateDraft(answers) {
-  const res = await fetch('/api/draft', {
-    method: 'POST',
-    headers: jsonHeaders(),
-    body: JSON.stringify({ answers }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
-  return data.draft
-}
-
 // One conversational turn. Returns { reply, readyToDraft }.
 export async function sendChat(messages, options = {}) {
   const res = await fetch('/api/chat', {
@@ -46,7 +35,7 @@ export async function sendChat(messages, options = {}) {
   return data
 }
 
-// Drafts a full project request from a chatbot conversation transcript.
+// Drafts a full project request from a drafter conversation transcript.
 // Returns { draft, id } — id is the saved conversation row id.
 export async function generateDraftFromChat(messages, options = {}) {
   const res = await fetch('/api/draft', {
@@ -59,9 +48,38 @@ export async function generateDraftFromChat(messages, options = {}) {
   return { draft: data.draft, id: data.id }
 }
 
-// History: list conversations belonging to this visitor (newest first).
+export async function getAdminSession() {
+  const res = await fetch('/api/admin-auth', { credentials: 'same-origin' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data
+}
+
+export async function loginAdmin(email, password) {
+  const res = await fetch('/api/admin-auth', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data
+}
+
+export async function logoutAdmin() {
+  const res = await fetch('/api/admin-auth', {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data
+}
+
+// Admin-only history: list every saved conversation (newest first).
 export async function listConversations() {
-  const res = await fetch('/api/conversations', { headers: { 'X-Visitor-ID': getVisitorId() } })
+  const res = await fetch('/api/conversations', { credentials: 'same-origin' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
   return data.conversations || []
@@ -70,28 +88,41 @@ export async function listConversations() {
 // History: fetch one conversation's transcript + draft.
 export async function getConversation(id) {
   const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`, {
-    headers: { 'X-Visitor-ID': getVisitorId() },
+    credentials: 'same-origin',
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
   return data.conversation
 }
 
-// Funnel numbers: one row of totals for the drafter funnel. Counts come back
-// from Postgres as strings (bigint), so they are coerced here — every caller
-// wants numbers.
+// Funnel numbers split between Website and Platform. Counts come back from
+// Postgres as strings (bigint), so both summaries are coerced to numbers.
 export async function getFunnelSummary() {
-  const res = await fetch('/api/funnel')
+  const res = await fetch('/api/funnel', { credentials: 'same-origin' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
-  const s = data.summary || {}
+  const summary = data.summary || {}
   return {
-    conversationsStarted: Number(s.conversations_started || 0),
-    leftInConversation: Number(s.left_in_conversation || 0),
-    leftInReview: Number(s.left_in_review || 0),
-    leftInSignup: Number(s.left_in_signup || 0),
-    completed: Number(s.completed || 0),
-    uniqueVisitors: Number(s.unique_visitors || 0),
+    website: normalizeFunnelSummary(summary.website),
+    platform: normalizeFunnelSummary(summary.platform),
+  }
+}
+
+export async function getMarketplaceSuggestions(query) {
+  const res = await fetch(`/api/marketplace-suggestions?q=${encodeURIComponent(query)}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return Array.isArray(data.suggestions) ? data.suggestions : []
+}
+
+function normalizeFunnelSummary(summary = {}) {
+  return {
+    conversationsStarted: Number(summary.conversations_started || 0),
+    leftInConversation: Number(summary.left_in_conversation || 0),
+    leftInReview: Number(summary.left_in_review || 0),
+    leftInSignup: Number(summary.left_in_signup || 0),
+    completed: Number(summary.completed || 0),
+    uniqueVisitors: Number(summary.unique_visitors || 0),
   }
 }
 
@@ -127,38 +158,14 @@ export async function fetchPlaceSuggestions(query, { signal } = {}) {
   }
 }
 
-// Sign-up handoff: create the user and save their drafted project in the
-// EqualReach web app (Bubble backend workflow). Called directly from the
-// browser — this is an external endpoint, not our proxy. Both Webflow branches
-// embed the same Vercel app, so select Bubble's test workflows from the parent
-// frame hostname. A missing/unknown parent deliberately defaults to live,
-// preserving the existing behavior for direct links and production embeds.
-const STAGING_WEBFLOW_HOST = 'webflow.equalreach.io'
+// Every Bubble workflow used by this deployed app currently targets live.
+// There is deliberately no versioned workflow fallback.
+const BUBBLE_WORKFLOW_BASE =
+  'https://admin-83903.bubbleapps.io/api/1.1/wf'
 
-function embeddingHostname() {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return ''
-
-  try {
-    const ancestorOrigin = window.location.ancestorOrigins?.[0]
-    if (ancestorOrigin) return new URL(ancestorOrigin).hostname.toLowerCase()
-  } catch {
-    // Fall through to the standard referrer below.
-  }
-
-  try {
-    return document.referrer ? new URL(document.referrer).hostname.toLowerCase() : ''
-  } catch {
-    return ''
-  }
+export function bubbleWorkflowBaseForHost(_hostname = '') {
+  return BUBBLE_WORKFLOW_BASE
 }
-
-export function bubbleWorkflowBaseForHost(hostname = '') {
-  return String(hostname).toLowerCase() === STAGING_WEBFLOW_HOST
-    ? 'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf'
-    : 'https://admin-83903.bubbleapps.io/api/1.1/wf'
-}
-
-const BUBBLE_WORKFLOW_BASE = bubbleWorkflowBaseForHost(embeddingHostname())
 
 const CREATE_USER_AND_DRAFT_URL =
   `${BUBBLE_WORKFLOW_BASE}/webhook-create-user-and-draft-project`
@@ -166,10 +173,9 @@ const CREATE_USER_AND_DRAFT_URL =
 const EXISTING_USER_DRAFT_URL =
   `${BUBBLE_WORKFLOW_BASE}/webhook-draft-project`
 
-// The dedicated Bubble-app embed remains tied to its versioned workflow. The
-// Webflow login popup uses EXISTING_USER_DRAFT_URL above, selected by host.
+// The dedicated Bubble-app embed uses its existing-user internal workflow.
 const BUBBLE_EMBED_DRAFT_URL =
-  'https://admin-83903.bubbleapps.io/version-93726/api/1.1/wf/webhook-draft-project'
+  'https://admin-83903.bubbleapps.io/api/1.1/wf/webhook-draft-project_internal'
 
 // The Bubble workflow types several params as Option Sets / Date / number, so
 // the free-text draft values must be coerced to match before sending.
@@ -266,10 +272,10 @@ export function formatDisplayDate(value) {
 // `ai_redirect=yes` marks this as an arrival from the AI drafter, so the web
 // app sends them straight in instead of bouncing them to /login. No token
 // rides along — the app resolves the draft itself.
-export const REDIRECT_URL = 'https://app.equalreach.io/version-93726/redirect?ai_redirect=yes'
+export const REDIRECT_URL = 'https://app.equalreach.io/redirect?ai_redirect=yes'
 
 // Where an existing account is sent instead: they authenticate normally.
-export const LOGIN_URL = 'https://app.equalreach.io/version-93726/login'
+export const LOGIN_URL = 'https://app.equalreach.io/login'
 
 // 32 hex chars of CSPRNG randomness, sent to the workflow as
 // `ai_drafter_token`. No longer echoed in the redirect URL — the web app is
@@ -309,6 +315,8 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     organizationName: contact.organizationName || '',
     firstName: contact.firstName || '',
     lastName: contact.lastName || '',
+    // A JSON boolean lets Bubble initialize this parameter as a Yes/No field.
+    receiveNews: contact.receiveNews === true,
     // Sent top-level, deliberately NOT inside `draft`: drafts are persisted to
     // our own history store and echoed back to the browser, and a credential
     // must not ride along into either.
@@ -463,11 +471,16 @@ const LOGIN_TOTAL_DEADLINE_MS = 15000
 // the account appears or the deadline passes. Every other outcome (a timeout,
 // a refused login, a malformed answer) stops immediately: none of them get
 // better by asking again.
-export async function fetchLoginRedirect(email, password) {
+export async function fetchLoginRedirect(
+  email,
+  password,
+  { drafterSource = 'website' } = {},
+) {
   const deadline = Date.now() + LOGIN_TOTAL_DEADLINE_MS
+  const workflowUrl = LOGIN_WORKFLOW_URL
 
   for (let attempt = 0; ; attempt++) {
-    const { url, retryable } = await loginAttempt(email, password)
+    const { url, retryable } = await loginAttempt(email, password, workflowUrl)
     if (url) {
       if (attempt > 0) console.info(`[login] account ready after ${attempt + 1} attempts`)
       return url
@@ -484,10 +497,14 @@ export async function fetchLoginRedirect(email, password) {
   }
 }
 
-// Login from the existing-account modal uses the explicitly versioned Bubble
-// workflow. It waits for Bubble's one-shot navigation link before returning.
-export async function loginWithCredentials(email, password) {
-  const { url, retryable } = await loginAttempt(email, password, EXISTING_USER_LOGIN_URL)
+// Login waits for Bubble's one-shot navigation link before returning.
+export async function loginWithCredentials(
+  email,
+  password,
+  { drafterSource = 'website' } = {},
+) {
+  const workflowUrl = EXISTING_USER_LOGIN_URL
+  const { url, retryable } = await loginAttempt(email, password, workflowUrl)
   if (url) return url
   throw new Error(
     retryable
@@ -548,11 +565,17 @@ async function loginAttempt(email, password, workflowUrl = LOGIN_WORKFLOW_URL) {
 //
 // `keepalive` matters here: on the timeout path we redirect while the request
 // is still in flight, and without it the browser may cancel it on navigation.
-export function submitDraftSignup(email, draft, contact = {}) {
+export function submitDraftSignup(
+  email,
+  draft,
+  contact = {},
+  { drafterSource = 'website' } = {},
+) {
   const aiDrafterToken = generateDrafterToken()
   const body = JSON.stringify(buildSubmissionPayload(email, draft, contact, aiDrafterToken))
+  const workflowUrl = CREATE_USER_AND_DRAFT_URL
 
-  const request = fetch(CREATE_USER_AND_DRAFT_URL, {
+  const request = fetch(workflowUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,
@@ -576,10 +599,27 @@ export function submitDraftSignup(email, draft, contact = {}) {
 
 // Existing users submit the same normalized payload as sign-up, but to the
 // workflow that initializes a draft for an account that already exists.
-export async function submitDraftLogin(email, draft, contact = {}, { bubbleEmbed = false } = {}) {
+export async function submitDraftLogin(
+  email,
+  draft,
+  contact = {},
+  { bubbleEmbed = false, drafterSource = 'website' } = {},
+) {
   const aiDrafterToken = generateDrafterToken()
-  const body = JSON.stringify(buildSubmissionPayload(email, draft, contact, aiDrafterToken))
-  const workflowUrl = bubbleEmbed ? BUBBLE_EMBED_DRAFT_URL : EXISTING_USER_DRAFT_URL
+  const payload = buildSubmissionPayload(email, draft, contact, aiDrafterToken)
+  let workflowUrl = EXISTING_USER_DRAFT_URL
+
+  if (bubbleEmbed) {
+    const userId = String(contact.userId || '').trim()
+    if (!userId) throw new Error('The signed-in Bubble user ID is missing.')
+    workflowUrl = BUBBLE_EMBED_DRAFT_URL
+    // Bubble resolves the existing user from top-level `u` in the payload.
+    // Existing users do not send authentication fields through this workflow.
+    delete payload.email
+    delete payload.password
+  }
+
+  const body = JSON.stringify(payload)
   const res = await fetch(workflowUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

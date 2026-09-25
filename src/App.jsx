@@ -1,42 +1,79 @@
 import { useEffect, useState } from 'react'
-import { checkHealth } from './lib/api.js'
-import GuidedDrafter from './components/GuidedDrafter.jsx'
+import { checkHealth, getAdminSession, logoutAdmin } from './lib/api.js'
 import ChatAgent from './components/ChatAgent.jsx'
 import HistoryPage from './components/HistoryPage.jsx'
 import DraftPage from './components/DraftPage.jsx'
+import PlatformDraftPage from './components/PlatformDraftPage.jsx'
 import BubbleDraftPage from './components/BubbleDraftPage.jsx'
 import FunnelPage from './components/FunnelPage.jsx'
+import AiDrafterPage from './components/AiDrafterPage.jsx'
+import { AdminGate, AdminLayout } from './components/AdminAccess.jsx'
 
 // Tiny hash router so each experience has a shareable link:
-//   #/         → Guided Drafter (the original fixed-question flow)
-//   #/chat     → AI Chatbot (free-form conversation)
-//   #/draft    → Project Drafter (ChatGPT-style: sidebar history + chat)
+//   #/ or #/draft → Website Project Drafter
+//   #/platform-draft → Platform Project Drafter
+//   #/ai-drafter → Simple AI Drafter prompt
 //   #/history  → Saved Projects (conversations + drafts)
 //   #/funnel   → Funnel (how far people get in the drafter)
 function routeFromHash() {
   const r = window.location.hash.replace(/^#\/?/, '')
-  if (r === 'chat') return 'chat'
-  if (r === 'draft') return 'draft'
+  if (r === 'platform-draft') return 'platform-draft'
+  if (r === 'ai-drafter') return 'ai-drafter'
+  if (r === 'admin') return 'admin'
   if (r === 'history') return 'history'
   if (r === 'funnel') return 'funnel'
-  return 'home'
+  return 'draft'
 }
 
-// ?embed=1      → chat bubble widget (existing)
+// ?embed=1      → compact chat bubble widget for Webflow
 // ?embed=draft  → original Project Drafter iframe for Webflow
 // ?embed=bubble → separate existing-user Project Drafter for the Bubble app
+// ?embed=platform → existing-user Platform Project Drafter for the Bubble app
+// ?embed=marketplace → navbar-free Marketplace Drafter iframe
 const params = new URLSearchParams(window.location.search)
-const EMBED = params.get('embed') === '1'
+const EMBED_CHAT = params.get('embed') === '1'
 const EMBED_DRAFT = params.get('embed') === 'draft'
 const EMBED_BUBBLE = params.get('embed') === 'bubble'
+const EMBED_PLATFORM = params.get('embed') === 'platform'
+const EMBED_MARKETPLACE = params.get('embed') === 'marketplace'
 
 export default function App() {
   const [route, setRoute] = useState(routeFromHash)
   const [keyConfigured, setKeyConfigured] = useState(true)
+  const [adminSession, setAdminSession] = useState({
+    status: 'loading',
+    authenticated: false,
+    user: null,
+    configured: true,
+  })
 
   useEffect(() => {
     checkHealth().then((h) => setKeyConfigured(Boolean(h.keyConfigured)))
+    getAdminSession()
+      .then((session) => setAdminSession({ status: 'ready', ...session }))
+      .catch(() =>
+        setAdminSession({
+          status: 'ready',
+          authenticated: false,
+          user: null,
+          configured: true,
+        }),
+      )
   }, [])
+
+  async function signOutAdmin() {
+    try {
+      await logoutAdmin()
+    } finally {
+      setAdminSession({
+        status: 'ready',
+        authenticated: false,
+        user: null,
+        configured: true,
+      })
+      window.location.hash = '#/draft'
+    }
+  }
 
   useEffect(() => {
     const onHash = () => setRoute(routeFromHash())
@@ -44,11 +81,38 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  // Chat bubble widget — stripped UI for the Webflow floating button
-  if (EMBED) {
+  useEffect(() => {
+    if (!EMBED_MARKETPLACE) return undefined
+
+    const embed = document.querySelector('.marketplace-embed')
+    if (!embed) return undefined
+
+    let frame = 0
+    const reportHeight = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const height = Math.ceil(embed.getBoundingClientRect().height)
+        window.parent?.postMessage({ type: 'er-marketplace-drafter-resize', height }, '*')
+      })
+    }
+
+    const observer = new ResizeObserver(reportHeight)
+    observer.observe(embed)
+    window.addEventListener('load', reportHeight)
+    document.fonts?.ready.then(reportHeight)
+    reportHeight()
+
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('load', reportHeight)
+    }
+  }, [])
+
+  if (EMBED_CHAT) {
     return (
       <div className="app embed">
-        <ChatAgent key="chat" />
+        <ChatAgent key="chat-widget" />
       </div>
     )
   }
@@ -67,51 +131,72 @@ export default function App() {
   // shares the drafter UI while keeping its review CTA/auth behavior separate.
   if (EMBED_BUBBLE) {
     return (
-      <div className="app wide">
+      <div className="app wide bubble-drafter">
         <BubbleDraftPage key="bubble-draft-embed" />
       </div>
     )
   }
 
-  // The draft page is fully self-contained (brand lives in its sidebar),
-  // so we skip the navbar and remove the 820px cap entirely for that route.
-  if (route === 'draft') {
+  if (EMBED_PLATFORM) {
+    const existingUserId = (params.get('u') || '').trim()
+    return (
+      <div className="app wide bubble-drafter">
+        <PlatformDraftPage
+          key="platform-draft-embed"
+          submissionMode="bubble-existing-user"
+          existingUserId={existingUserId}
+        />
+      </div>
+    )
+  }
+
+  if (EMBED_MARKETPLACE) {
+    return (
+      <div className="app wide marketplace-embed">
+        <AiDrafterPage key="marketplace-draft-embed" />
+      </div>
+    )
+  }
+
+  // Drafter tabs use the full-width workspace below the shared navbar.
+  if (route === 'draft' || route === 'platform-draft' || route === 'ai-drafter') {
     return (
       <div className="app wide">
+        <Navbar route={route} adminSession={adminSession} />
         {!keyConfigured && (
           <div className="banner">
             ⚠️ No Gemini API key detected. Add <code>GEMINI_API_KEY</code> to your <code>.env</code> file and
             restart the server.
           </div>
         )}
-        <DraftPage key="draft" />
+        {route === 'draft' && <DraftPage key="website-draft" />}
+        {route === 'platform-draft' && <PlatformDraftPage key="platform-draft" />}
+        {route === 'ai-drafter' && <AiDrafterPage key="ai-drafter" />}
       </div>
     )
   }
 
   return (
-    <div className="app">
-      <Navbar route={route} />
-
-      {!keyConfigured && (
-        <div className="banner">
-          ⚠️ No Gemini API key detected. Add <code>GEMINI_API_KEY</code> to your <code>.env</code> file and
-          restart the server.
-        </div>
-      )}
-
-      {route === 'chat' && <ChatAgent key="chat" />}
-      {route === 'history' && <HistoryPage key="history" />}
-      {route === 'funnel' && <FunnelPage key="funnel" />}
-      {route === 'home' && <GuidedDrafter key="home" />}
+    <div className="app wide">
+      <AdminGate
+        session={adminSession}
+        onAuthenticated={(session) =>
+          setAdminSession({ status: 'ready', configured: true, ...session })
+        }
+      >
+        <AdminLayout route={route} user={adminSession.user} onLogout={signOutAdmin}>
+          {(route === 'admin' || route === 'history') && <HistoryPage key="history" />}
+          {route === 'funnel' && <FunnelPage key="funnel" />}
+        </AdminLayout>
+      </AdminGate>
     </div>
   )
 }
 
-function Navbar({ route }) {
+function Navbar({ route, adminSession }) {
   return (
     <nav className="navbar">
-      <a className="brand" href="#/" aria-label="EqualReach home">
+      <a className="brand" href="#/draft" aria-label="EqualReach home">
         <span className="brand-mark">◐</span>
         <div>
           <div className="brand-name">EqualReach</div>
@@ -119,20 +204,20 @@ function Navbar({ route }) {
         </div>
       </a>
       <div className="nav-links">
-        <a href="#/" className={`nav-link ${route === 'home' ? 'active' : ''}`}>
-          Guided Drafter
-        </a>
-        <a href="#/chat" className={`nav-link ${route === 'chat' ? 'active' : ''}`}>
-          AI Chatbot
-        </a>
         <a href="#/draft" className={`nav-link ${route === 'draft' ? 'active' : ''}`}>
-          Project Drafter
+          Website Project Drafter
         </a>
-        <a href="#/history" className={`nav-link ${route === 'history' ? 'active' : ''}`}>
-          Saved Projects
+        <a
+          href="#/platform-draft"
+          className={`nav-link ${route === 'platform-draft' ? 'active' : ''}`}
+        >
+          Platform Project Drafter
         </a>
-        <a href="#/funnel" className={`nav-link ${route === 'funnel' ? 'active' : ''}`}>
-          Funnel
+        <a href="#/ai-drafter" className={`nav-link ${route === 'ai-drafter' ? 'active' : ''}`}>
+          Marketplace Drafter
+        </a>
+        <a href="#/admin" className={`nav-link ${route === 'admin' ? 'active' : ''}`}>
+          {adminSession.authenticated ? 'Admin Dashboard' : 'Admin'}
         </a>
       </div>
     </nav>

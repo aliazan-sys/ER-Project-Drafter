@@ -13,20 +13,27 @@ import cors from 'cors'
 import {
   MODEL,
   hasApiKey,
-  generateDraft,
   generateDraftFromConversation,
   chatReply,
+  generateMarketplaceSuggestions,
+  fallbackMarketplaceSuggestions,
   GeminiError,
 } from './shared/gemini.js'
 import {
   saveSubmission,
-  answersToMessages,
   listConversations,
   getConversation,
   recordStage,
   funnelSummary,
 } from './shared/store.js'
 import { suggestPlaces, hasPlacesKey, PlacesError } from './shared/places.js'
+import {
+  adminAuthConfigured,
+  getAdminSession,
+  requireAdmin,
+  signInAdmin,
+  signOutAdmin,
+} from './shared/adminAuth.js'
 
 const app = express()
 app.use(cors())
@@ -43,13 +50,58 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
-// One conversational turn for the chatbot page.
+app.get('/api/admin-auth', async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store')
+  const user = await getAdminSession(req, res)
+  res.json({
+    authenticated: Boolean(user),
+    user,
+    configured: adminAuthConfigured(),
+  })
+})
+
+app.post('/api/admin-auth', async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store')
+  if (!adminAuthConfigured()) {
+    return res.status(503).json({ error: 'Admin access is not configured.' })
+  }
+  const { email, password } = req.body || {}
+  const result = await signInAdmin(email, password, res)
+  if (!result.ok) return res.status(result.status).json({ error: result.error })
+  return res.json({ authenticated: true, user: result.user })
+})
+
+app.delete('/api/admin-auth', async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store')
+  await signOutAdmin(req, res)
+  res.json({ authenticated: false })
+})
+
+async function requireLocalAdmin(req, res, next) {
+  if (!(await requireAdmin(req, res))) return
+  next()
+}
+
+app.get('/api/marketplace-suggestions', async (req, res) => {
+  const query = String(req.query?.q || '').trim().slice(0, 120)
+  if (!query) return res.status(400).json({ error: 'Missing "q" query parameter.' })
+
+  try {
+    res.json({ suggestions: await generateMarketplaceSuggestions(query) })
+  } catch (err) {
+    console.error('[/api/marketplace-suggestions] error:', err)
+    res.json({ suggestions: fallbackMarketplaceSuggestions(query) })
+  }
+})
+
+// One conversational turn for the Project Drafter.
 app.post('/api/chat', async (req, res) => {
   try {
     const messages = req.body?.messages
     console.log('\n[/api/chat] messages received:', JSON.stringify(messages, null, 2))
     const result = await chatReply(messages, {
       skipOrgProfile: req.body?.skipOrgProfile === true,
+      drafterSource: req.body?.drafterSource,
     })
     console.log('[/api/chat] result:', JSON.stringify(result))
     res.json(result)
@@ -62,18 +114,15 @@ app.post('/api/chat', async (req, res) => {
   }
 })
 
-// Drafts from either the guided form's `answers` or the chatbot's `messages`,
-// then persists the conversation + draft (best-effort).
+// Generates and persists a draft from the Project Drafter conversation.
 app.post('/api/draft', async (req, res) => {
   try {
-    const { messages, answers, skipOrgProfile } = req.body || {}
-    const draft = messages
-      ? await generateDraftFromConversation(messages, { skipOrgProfile: skipOrgProfile === true })
-      : await generateDraft(answers)
-
-    const mode = messages ? 'chat' : 'guided'
-    const transcript = messages || answersToMessages(answers)
-    const id = await saveSubmission({ mode, messages: transcript, draft })
+    const { messages, skipOrgProfile, drafterSource } = req.body || {}
+    const draft = await generateDraftFromConversation(messages, {
+      skipOrgProfile: skipOrgProfile === true,
+    })
+    const mode = drafterSource === 'platform' ? 'platform' : 'website'
+    const id = await saveSubmission({ mode, messages, draft })
 
     res.json({ draft, id })
   } catch (err) {
@@ -112,15 +161,15 @@ app.post('/api/track', async (req, res) => {
   res.json({ recorded })
 })
 
-// The funnel numbers in one row. Mirrors api/funnel.js.
-app.get('/api/funnel', async (_req, res) => {
+// Website and Platform funnel numbers. Mirrors api/funnel.js.
+app.get('/api/funnel', requireLocalAdmin, async (_req, res) => {
   const summary = await funnelSummary()
   if (!summary) return res.status(503).json({ error: 'Tracking storage is not configured.' })
   res.json({ summary })
 })
 
 // History: list all saved conversations, or fetch one (with transcript + draft).
-app.get('/api/conversations', async (req, res) => {
+app.get('/api/conversations', requireLocalAdmin, async (req, res) => {
   try {
     if (req.query.id) {
       const row = await getConversation(req.query.id)

@@ -37,14 +37,15 @@ const STAGES = [
 ]
 
 export default function FunnelPage() {
-  const [data, setData] = useState(null)
+  const [summaries, setSummaries] = useState(null)
+  const [source, setSource] = useState('website')
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState('')
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setStatus('loading')
     try {
-      setData(await getFunnelSummary())
+      setSummaries(await getFunnelSummary())
       setStatus('ready')
     } catch (err) {
       setError(err.message || 'Could not load the funnel.')
@@ -54,11 +55,20 @@ export default function FunnelPage() {
 
   useEffect(() => { load() }, [load])
 
+  const data = summaries?.[source] || null
+
   // Each stage's bar is CUMULATIVE — everyone who got at least this far —
   // because that is what a funnel asks. The stored `stage` is where a
   // conversation STOPPED, so reaching a stage means stopping at it or later.
   const rows = data
-    ? STAGES.map((s, i) => {
+    ? STAGES.map((stage, i) => {
+        const s = source === 'platform' && stage.key === 'signup'
+          ? {
+              ...stage,
+              label: 'Ready to submit the project',
+              note: 'Reached the final project submission stage',
+            }
+          : stage
         const reached = [
           data.conversationsStarted,
           data.leftInReview + data.leftInSignup + data.completed,
@@ -97,7 +107,28 @@ export default function FunnelPage() {
 
       <main className="chat">
         <div className="funnel-page">
-          {status === 'loading' && !data && <p className="muted">Loading funnel…</p>}
+          <div className="funnel-source-tabs" role="tablist" aria-label="Drafter funnel">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === 'website'}
+              className={`funnel-source-tab ${source === 'website' ? 'active' : ''}`}
+              onClick={() => setSource('website')}
+            >
+              Website Drafter
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === 'platform'}
+              className={`funnel-source-tab ${source === 'platform' ? 'active' : ''}`}
+              onClick={() => setSource('platform')}
+            >
+              Platform Drafter
+            </button>
+          </div>
+
+          {status === 'loading' && !summaries && <p className="muted">Loading funnel…</p>}
 
           {status === 'error' && (
             <div className="history-empty">
@@ -113,9 +144,8 @@ export default function FunnelPage() {
             <div className="history-empty">
               <p className="strong">No conversations tracked yet.</p>
               <p className="muted">
-                Only traffic on the live site is counted — conversations on localhost and preview
-                deploys are deliberately not recorded, so this stays empty until a real visitor
-                starts a draft.
+                Only live {source} drafter traffic is counted — localhost and preview deploys are
+                deliberately excluded, so this stays empty until a real visitor starts a draft.
               </p>
             </div>
           )}
@@ -182,7 +212,7 @@ export default function FunnelPage() {
                     {[
                       ['During the conversation', data.leftInConversation],
                       ['During review', data.leftInReview],
-                      ['During signup', data.leftInSignup],
+                      [source === 'platform' ? 'Before project submission' : 'During signup', data.leftInSignup],
                       ['Completed', data.completed],
                     ].map(([label, count]) => (
                       <tr key={label}>

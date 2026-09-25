@@ -101,8 +101,8 @@ export default function HistoryPage() {
             <div className="history-empty">
               <p className="strong">No saved projects yet.</p>
               <p className="muted">
-                Drafts you create on the Guided Drafter or AI Chatbot pages are stored here
-                automatically. If you just set up the database, create a draft and it will appear.
+                Projects you create in either Project Drafter are stored here automatically. If you
+                just set up the database, create a draft and it will appear.
               </p>
             </div>
           )}
@@ -116,7 +116,7 @@ export default function HistoryPage() {
                     {it.message_count ?? 0} messages · {formatDate(it.created_at)}
                   </span>
                 </div>
-                <span className={`mode-badge ${it.mode}`}>{modeLabel(it.mode)}</span>
+                <span className={`mode-badge ${modeKind(it.mode)}`}>{modeLabel(it.mode)}</span>
               </button>
             ))}
         </div>
@@ -125,8 +125,12 @@ export default function HistoryPage() {
   )
 }
 
+function modeKind(mode) {
+  return mode === 'platform' ? 'platform' : 'website'
+}
+
 function modeLabel(mode) {
-  return mode === 'guided' ? 'Guided' : 'Chatbot'
+  return modeKind(mode) === 'platform' ? 'Platform Drafter' : 'Website Drafter'
 }
 
 function formatDate(value) {
