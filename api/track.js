@@ -16,6 +16,7 @@ export default async function handler(req, res) {
     stage: body.stage,
     mode: body.mode,
     visitorId: req.headers['x-visitor-id'] || null,
+    attribution: body.attribution,
   })
   return res.status(200).json({ recorded })
 }

@@ -151,12 +151,13 @@ app.get('/api/places', async (req, res) => {
 // Funnel tracking: how far each conversation got. Always 200 — a tracking
 // failure must never show up in the UI. Mirrors api/track.js.
 app.post('/api/track', async (req, res) => {
-  const { sessionId, stage, mode } = req.body || {}
+  const { sessionId, stage, mode, attribution } = req.body || {}
   const recorded = await recordStage({
     sessionId,
     stage,
     mode,
     visitorId: req.get('X-Visitor-ID') || null,
+    attribution,
   })
   res.json({ recorded })
 })

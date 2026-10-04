@@ -13,6 +13,7 @@
 
 import pg from 'pg'
 import { isFunnelStage, stageRank } from './funnel.js'
+import { normalizeAttribution } from './attribution.js'
 
 const { Pool } = pg
 
@@ -110,6 +111,18 @@ function ensureFunnelSchema() {
         -- they were: local testing against this same database.
         ALTER TABLE funnel_sessions
           ADD COLUMN IF NOT EXISTS environment text NOT NULL DEFAULT 'development';
+        ALTER TABLE funnel_sessions
+          ADD COLUMN IF NOT EXISTS acquisition_source text,
+          ADD COLUMN IF NOT EXISTS utm_source text,
+          ADD COLUMN IF NOT EXISTS utm_medium text,
+          ADD COLUMN IF NOT EXISTS utm_campaign text,
+          ADD COLUMN IF NOT EXISTS utm_term text,
+          ADD COLUMN IF NOT EXISTS utm_content text,
+          ADD COLUMN IF NOT EXISTS referrer_host text,
+          ADD COLUMN IF NOT EXISTS landing_path text,
+          ADD COLUMN IF NOT EXISTS gclid text,
+          ADD COLUMN IF NOT EXISTS fbclid text,
+          ADD COLUMN IF NOT EXISTS msclkid text;
         CREATE INDEX IF NOT EXISTS funnel_sessions_stage_idx ON funnel_sessions(stage);
         CREATE INDEX IF NOT EXISTS funnel_sessions_visitor_idx ON funnel_sessions(visitor_id);
         CREATE INDEX IF NOT EXISTS funnel_sessions_env_idx ON funnel_sessions(environment);
@@ -138,16 +151,24 @@ function ensureFunnelSchema() {
 //
 // Best-effort like everything else here: a tracking failure is logged and
 // swallowed, never surfaced to the user.
-export async function recordStage({ sessionId, stage, mode, visitorId }) {
+export async function recordStage({ sessionId, stage, mode, visitorId, attribution }) {
   if (!isConfigured() || !sessionId || !isFunnelStage(stage)) return false
   // Localhost and preview deploys write nothing at all, so the table holds
   // only real traffic — not just the summary.
   if (!isLiveEnvironment()) return false
   try {
     await ensureFunnelSchema()
+    const source = normalizeAttribution(attribution)
     await pool().query(
-      `INSERT INTO funnel_sessions (session_id, visitor_id, mode, stage, stage_rank, completed_at, environment)
-       VALUES ($1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END, $6)
+      `INSERT INTO funnel_sessions (
+         session_id, visitor_id, mode, stage, stage_rank, completed_at, environment,
+         acquisition_source, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+         referrer_host, landing_path, gclid, fbclid, msclkid
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END, $6,
+         $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+       )
        ON CONFLICT (session_id) DO UPDATE SET
          stage = CASE WHEN EXCLUDED.stage_rank > funnel_sessions.stage_rank
                       THEN EXCLUDED.stage ELSE funnel_sessions.stage END,
@@ -156,9 +177,38 @@ export async function recordStage({ sessionId, stage, mode, visitorId }) {
          -- header cannot blank out what we already know.
          visitor_id = COALESCE(funnel_sessions.visitor_id, EXCLUDED.visitor_id),
          mode = COALESCE(funnel_sessions.mode, EXCLUDED.mode),
+         acquisition_source = COALESCE(funnel_sessions.acquisition_source, EXCLUDED.acquisition_source),
+         utm_source = COALESCE(funnel_sessions.utm_source, EXCLUDED.utm_source),
+         utm_medium = COALESCE(funnel_sessions.utm_medium, EXCLUDED.utm_medium),
+         utm_campaign = COALESCE(funnel_sessions.utm_campaign, EXCLUDED.utm_campaign),
+         utm_term = COALESCE(funnel_sessions.utm_term, EXCLUDED.utm_term),
+         utm_content = COALESCE(funnel_sessions.utm_content, EXCLUDED.utm_content),
+         referrer_host = COALESCE(funnel_sessions.referrer_host, EXCLUDED.referrer_host),
+         landing_path = COALESCE(funnel_sessions.landing_path, EXCLUDED.landing_path),
+         gclid = COALESCE(funnel_sessions.gclid, EXCLUDED.gclid),
+         fbclid = COALESCE(funnel_sessions.fbclid, EXCLUDED.fbclid),
+         msclkid = COALESCE(funnel_sessions.msclkid, EXCLUDED.msclkid),
          completed_at = COALESCE(funnel_sessions.completed_at, EXCLUDED.completed_at),
          updated_at = now()`,
-      [sessionId, visitorId || null, mode || null, stage, stageRank(stage), currentEnvironment()]
+      [
+        sessionId,
+        visitorId || null,
+        mode || null,
+        stage,
+        stageRank(stage),
+        currentEnvironment(),
+        source.acquisitionSource,
+        source.utmSource,
+        source.utmMedium,
+        source.utmCampaign,
+        source.utmTerm,
+        source.utmContent,
+        source.referrerHost,
+        source.landingPath,
+        source.gclid,
+        source.fbclid,
+        source.msclkid,
+      ]
     )
     return true
   } catch (err) {

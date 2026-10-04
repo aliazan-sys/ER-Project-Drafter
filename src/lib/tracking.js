@@ -10,6 +10,7 @@
 //    about order, repeats, or the user navigating backwards.
 
 import { getVisitorId } from './api.js'
+import { attributionFromPage } from '../../shared/attribution.js'
 
 const SESSION_KEY = 'er_funnel_session'
 const MODE_KEY = 'er_funnel_mode'
@@ -65,7 +66,13 @@ export function trackStage(stage) {
   const sessionId = read(SESSION_KEY, 'session')
   if (!sessionId) return
 
-  const body = JSON.stringify({ sessionId, stage, mode: read(MODE_KEY, 'mode') })
+  const attribution = attributionFromPage(window.location.href, document.referrer)
+  const body = JSON.stringify({
+    sessionId,
+    stage,
+    mode: read(MODE_KEY, 'mode'),
+    attribution,
+  })
   try {
     fetch('/api/track', {
       method: 'POST',

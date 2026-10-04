@@ -15,6 +15,8 @@
 <!-- ===================================================================== -->
 <script>
   (function () {
+    var ATTRIBUTION_KEY = 'er_first_touch_attribution';
+
     // Match the drafter frame by host rather than by query string, so this
     // works whether the embed URL is ?embed=draft, #/draft, or a bare link.
     function frames() {
@@ -26,18 +28,58 @@
       });
     }
 
-    // Carry a Marketplace Drafter handoff from the Webflow page URL into the
-    // cross-origin Vercel iframe. Assign only when the value differs so the
-    // settle loop below never reloads the frame repeatedly.
-    function forwardInitialPrompt() {
-      var prompt = new URLSearchParams(window.location.search).get('initial_prompt');
-      if (!prompt || !prompt.trim()) return;
+    // Carry the prompt and first-touch acquisition context from Webflow into
+    // the cross-origin Vercel iframe. Inside the iframe document.referrer is
+    // only this Webflow page, so the original referrer must be forwarded here.
+    // Assign only when values differ so the settle loop never reloads it twice.
+    function firstTouchAttribution() {
+      var pageParams = new URLSearchParams(window.location.search);
+      try {
+        var saved = JSON.parse(sessionStorage.getItem(ATTRIBUTION_KEY) || 'null');
+        if (saved && saved.source && saved.landingPath) return saved;
+      } catch (_) {}
+
+      var referrerHost = '';
+      try { referrerHost = new URL(document.referrer).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) {}
+      var currentHost = window.location.hostname.replace(/^www\./, '').toLowerCase();
+      if (referrerHost === currentHost) referrerHost = '';
+      var passthrough = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'msclkid'];
+      var attribution = {
+        source: (pageParams.get('utm_source') || '').trim() || referrerHost || 'direct',
+        referrerHost: referrerHost,
+        landingPath: window.location.pathname,
+        params: {},
+      };
+      passthrough.forEach(function (key) {
+        var value = pageParams.get(key);
+        if (value) attribution.params[key] = value;
+      });
+      try { sessionStorage.setItem(ATTRIBUTION_KEY, JSON.stringify(attribution)); } catch (_) {}
+      return attribution;
+    }
+
+    function forwardPageContext() {
+      var pageParams = new URLSearchParams(window.location.search);
+      var prompt = pageParams.get('initial_prompt');
+      var attribution = firstTouchAttribution();
+
       frames().forEach(function (f) {
         try {
           var url = new URL(f.src, window.location.href);
-          if (url.searchParams.get('initial_prompt') === prompt) return;
-          url.searchParams.set('initial_prompt', prompt);
-          f.src = url.toString();
+          var changed = false;
+          function setParam(key, value) {
+            if (!value || url.searchParams.get(key) === value) return;
+            url.searchParams.set(key, value);
+            changed = true;
+          }
+          setParam('initial_prompt', prompt && prompt.trim());
+          Object.keys(attribution.params).forEach(function (key) {
+            setParam(key, attribution.params[key]);
+          });
+          setParam('er_source', attribution.source);
+          setParam('er_referrer_host', attribution.referrerHost);
+          setParam('er_landing_path', attribution.landingPath);
+          if (changed) f.src = url.toString();
         } catch (_) {}
       });
     }
@@ -77,7 +119,7 @@
       (document.head || document.documentElement).appendChild(s);
     }
 
-    function go() { forwardInitialPrompt(); hide(); fit(); }
+    function go() { forwardPageContext(); hide(); fit(); }
 
     // Browser history belongs to the Webflow page, not its cross-origin
     // drafter iframe. Handle the drafter's navigation request in the parent.
