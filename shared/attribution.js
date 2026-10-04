@@ -75,3 +75,12 @@ export function attributionFromPage(href, referrer = '') {
     msclkid: params.get('msclkid'),
   })
 }
+
+export function formatAttributionLabel(input = {}) {
+  const primary = input.utm_source || input.acquisition_source || input.referrer_host
+  if (!primary) return ''
+  const parts = [primary === 'direct' ? 'Direct' : primary]
+  if (input.utm_medium) parts.push(input.utm_medium)
+  if (input.utm_campaign) parts.push(input.utm_campaign)
+  return `Source: ${parts.join(' · ')}`
+}

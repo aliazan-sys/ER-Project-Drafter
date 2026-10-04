@@ -117,12 +117,18 @@ app.post('/api/chat', async (req, res) => {
 // Generates and persists a draft from the Project Drafter conversation.
 app.post('/api/draft', async (req, res) => {
   try {
-    const { messages, skipOrgProfile, drafterSource } = req.body || {}
+    const { messages, skipOrgProfile, drafterSource, funnelSessionId } = req.body || {}
     const draft = await generateDraftFromConversation(messages, {
       skipOrgProfile: skipOrgProfile === true,
     })
     const mode = drafterSource === 'platform' ? 'platform' : 'website'
-    const id = await saveSubmission({ mode, messages, draft })
+    const id = await saveSubmission({
+      mode,
+      messages,
+      draft,
+      visitorId: req.get('X-Visitor-ID') || null,
+      funnelSessionId,
+    })
 
     res.json({ draft, id })
   } catch (err) {

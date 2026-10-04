@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendChat, generateDraftFromChat } from '../lib/api.js'
-import { startConversation, resetConversation } from '../lib/tracking.js'
+import { getConversationSessionId, startConversation, resetConversation } from '../lib/tracking.js'
 import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
@@ -107,6 +107,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
       const { draft: result } = await generateDraftFromChat(convo, {
         skipOrgProfile,
         drafterSource,
+        funnelSessionId: getConversationSessionId(),
       })
       setDraft(result)
       // Fresh content — the old position no longer means anything, so open on

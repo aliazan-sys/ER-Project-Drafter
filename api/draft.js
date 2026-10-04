@@ -18,7 +18,13 @@ export default async function handler(req, res) {
     })
     const mode = body.drafterSource === 'platform' ? 'platform' : 'website'
     const visitorId = req.headers['x-visitor-id'] || null
-    const id = await saveSubmission({ mode, messages: body.messages, draft, visitorId })
+    const id = await saveSubmission({
+      mode,
+      messages: body.messages,
+      draft,
+      visitorId,
+      funnelSessionId: body.funnelSessionId,
+    })
 
     return res.status(200).json({ draft, id })
   } catch (err) {

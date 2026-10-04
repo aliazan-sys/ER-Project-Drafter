@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendChat, generateDraftFromChat } from '../lib/api.js'
-import { startConversation, resetConversation } from '../lib/tracking.js'
+import { getConversationSessionId, startConversation, resetConversation } from '../lib/tracking.js'
 import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 
@@ -45,6 +45,7 @@ export default function ChatAgent() {
     try {
       const { draft: result } = await generateDraftFromChat(conversation, {
         drafterSource: 'website',
+        funnelSessionId: getConversationSessionId(),
       })
       setDraft(result)
       setDraftStep(REVIEW_STEP_INDEX)

@@ -1283,6 +1283,12 @@ body {
   color: var(--muted);
 }
 
+.history-source {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--teal-dark);
+}
+
 .mode-badge {
   flex-shrink: 0;
   font-size: 11px;

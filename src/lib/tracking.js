@@ -58,6 +58,12 @@ export function resetConversation() {
   write(MODE_KEY, 'mode', null)
 }
 
+// Links a saved draft/conversation to the same funnel session. This read-only
+// helper does not create a session for history or draft-only views.
+export function getConversationSessionId() {
+  return read(SESSION_KEY, 'session')
+}
+
 // Reports that the conversation reached `stage`. A no-op when no conversation
 // is being tracked — which is what makes it safe to call from the draft wizard,
 // since that same wizard also opens from the history page, where there is no

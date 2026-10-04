@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { attributionFromPage, normalizeAttribution } from '../shared/attribution.js'
+import {
+  attributionFromPage,
+  formatAttributionLabel,
+  normalizeAttribution,
+} from '../shared/attribution.js'
 
 test('uses attribution forwarded by the Webflow host', () => {
   const result = attributionFromPage(
@@ -58,4 +62,17 @@ test('normalizes snake-case server input and caps untrusted values', () => {
 
   assert.equal(result.acquisitionSource, 'newsletter')
   assert.equal(result.utmCampaign.length, 255)
+})
+
+test('formats the tracked source for Admin Conversations', () => {
+  assert.equal(
+    formatAttributionLabel({
+      acquisition_source: 'linkedin',
+      utm_medium: 'paid',
+      utm_campaign: 'fall-launch',
+    }),
+    'Source: linkedin · paid · fall-launch',
+  )
+  assert.equal(formatAttributionLabel({ acquisition_source: 'direct' }), 'Source: Direct')
+  assert.equal(formatAttributionLabel({}), '')
 })

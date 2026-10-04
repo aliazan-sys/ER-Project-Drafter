@@ -46,13 +46,16 @@ function ensureSchema() {
         CREATE TABLE IF NOT EXISTS conversations (
           id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           visitor_id text,
+          funnel_session_id text,
           mode       text NOT NULL DEFAULT 'website',
           messages   jsonb NOT NULL DEFAULT '[]'::jsonb,
           created_at timestamptz NOT NULL DEFAULT now()
         );
         ALTER TABLE conversations ADD COLUMN IF NOT EXISTS visitor_id text;
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_session_id text;
         ALTER TABLE conversations ALTER COLUMN mode SET DEFAULT 'website';
         CREATE INDEX IF NOT EXISTS conversations_visitor_idx ON conversations(visitor_id);
+        CREATE INDEX IF NOT EXISTS conversations_funnel_session_idx ON conversations(funnel_session_id);
         CREATE TABLE IF NOT EXISTS drafts (
           id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           conversation_id uuid REFERENCES conversations(id) ON DELETE CASCADE,
@@ -125,6 +128,8 @@ function ensureFunnelSchema() {
           ADD COLUMN IF NOT EXISTS msclkid text;
         CREATE INDEX IF NOT EXISTS funnel_sessions_stage_idx ON funnel_sessions(stage);
         CREATE INDEX IF NOT EXISTS funnel_sessions_visitor_idx ON funnel_sessions(visitor_id);
+        CREATE INDEX IF NOT EXISTS funnel_sessions_visitor_started_idx
+          ON funnel_sessions(visitor_id, started_at DESC);
         CREATE INDEX IF NOT EXISTS funnel_sessions_env_idx ON funnel_sessions(environment);
         CREATE OR REPLACE VIEW funnel_summary AS
           SELECT
@@ -257,16 +262,27 @@ export async function funnelSummary() {
 // Saves a conversation and its generated draft. Returns the new conversation id,
 // or null when storage isn't configured. Never throws — persistence is
 // best-effort and must not break draft generation.
-export async function saveSubmission({ mode = 'website', messages = [], draft, visitorId }) {
+export async function saveSubmission({
+  mode = 'website',
+  messages = [],
+  draft,
+  visitorId,
+  funnelSessionId,
+}) {
   if (!isConfigured() || !draft) return null
   try {
     await ensureSchema()
     const client = await pool().connect()
     try {
       await client.query('BEGIN')
+      const sessionId = typeof funnelSessionId === 'string'
+        ? funnelSessionId.trim().slice(0, 255) || null
+        : null
       const conv = await client.query(
-        'INSERT INTO conversations (mode, messages, visitor_id) VALUES ($1, $2::jsonb, $3) RETURNING id',
-        [mode, JSON.stringify(messages), visitorId || null]
+        `INSERT INTO conversations (mode, messages, visitor_id, funnel_session_id)
+         VALUES ($1, $2::jsonb, $3, $4)
+         RETURNING id`,
+        [mode, JSON.stringify(messages), visitorId || null, sessionId]
       )
       const conversationId = conv.rows[0].id
       await client.query(
@@ -290,15 +306,52 @@ export async function saveSubmission({ mode = 'website', messages = [], draft, v
 // Returns conversations for a specific visitor (or all if no visitorId), newest first.
 export async function listConversations(visitorId) {
   if (!isConfigured()) return []
-  await ensureSchema()
+  await Promise.all([ensureSchema(), ensureFunnelSchema()])
   const { rows } = await pool().query(
     `SELECT c.id,
             c.mode,
             c.created_at,
+            c.funnel_session_id,
             d.title,
-            jsonb_array_length(c.messages) AS message_count
+            jsonb_array_length(c.messages) AS message_count,
+            source.acquisition_source,
+            source.utm_source,
+            source.utm_medium,
+            source.utm_campaign,
+            source.utm_term,
+            source.utm_content,
+            source.referrer_host,
+            source.landing_path,
+            source.gclid,
+            source.fbclid,
+            source.msclkid
      FROM conversations c
      LEFT JOIN drafts d ON d.conversation_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT matched.*
+       FROM (
+         SELECT fs.acquisition_source, fs.utm_source, fs.utm_medium, fs.utm_campaign,
+                fs.utm_term, fs.utm_content, fs.referrer_host, fs.landing_path,
+                fs.gclid, fs.fbclid, fs.msclkid, fs.started_at, 0 AS match_rank
+         FROM funnel_sessions fs
+         WHERE fs.session_id = c.funnel_session_id
+
+         UNION ALL
+
+         SELECT fs.acquisition_source, fs.utm_source, fs.utm_medium, fs.utm_campaign,
+                fs.utm_term, fs.utm_content, fs.referrer_host, fs.landing_path,
+                fs.gclid, fs.fbclid, fs.msclkid, fs.started_at, 1 AS match_rank
+         FROM funnel_sessions fs
+         WHERE c.funnel_session_id IS NULL
+           AND c.visitor_id IS NOT NULL
+           AND fs.visitor_id = c.visitor_id
+           AND COALESCE(fs.mode, 'website') = c.mode
+           AND fs.started_at BETWEEN c.created_at - INTERVAL '24 hours'
+                                 AND c.created_at + INTERVAL '5 minutes'
+       ) matched
+       ORDER BY matched.match_rank, matched.started_at DESC
+       LIMIT 1
+     ) source ON true
      WHERE (1=1)
      ORDER BY c.created_at DESC
      LIMIT 200`
@@ -309,11 +362,41 @@ export async function listConversations(visitorId) {
 // Returns one conversation's full transcript plus its draft, or null.
 export async function getConversation(id) {
   if (!isConfigured()) return null
-  await ensureSchema()
+  await Promise.all([ensureSchema(), ensureFunnelSchema()])
   const { rows } = await pool().query(
-    `SELECT c.id, c.mode, c.messages, c.created_at, d.title, d.draft
+    `SELECT c.id, c.mode, c.messages, c.created_at, c.funnel_session_id,
+            d.title, d.draft,
+            source.acquisition_source, source.utm_source, source.utm_medium,
+            source.utm_campaign, source.utm_term, source.utm_content,
+            source.referrer_host, source.landing_path,
+            source.gclid, source.fbclid, source.msclkid
      FROM conversations c
      LEFT JOIN drafts d ON d.conversation_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT matched.*
+       FROM (
+         SELECT fs.acquisition_source, fs.utm_source, fs.utm_medium, fs.utm_campaign,
+                fs.utm_term, fs.utm_content, fs.referrer_host, fs.landing_path,
+                fs.gclid, fs.fbclid, fs.msclkid, fs.started_at, 0 AS match_rank
+         FROM funnel_sessions fs
+         WHERE fs.session_id = c.funnel_session_id
+
+         UNION ALL
+
+         SELECT fs.acquisition_source, fs.utm_source, fs.utm_medium, fs.utm_campaign,
+                fs.utm_term, fs.utm_content, fs.referrer_host, fs.landing_path,
+                fs.gclid, fs.fbclid, fs.msclkid, fs.started_at, 1 AS match_rank
+         FROM funnel_sessions fs
+         WHERE c.funnel_session_id IS NULL
+           AND c.visitor_id IS NOT NULL
+           AND fs.visitor_id = c.visitor_id
+           AND COALESCE(fs.mode, 'website') = c.mode
+           AND fs.started_at BETWEEN c.created_at - INTERVAL '24 hours'
+                                 AND c.created_at + INTERVAL '5 minutes'
+       ) matched
+       ORDER BY matched.match_rank, matched.started_at DESC
+       LIMIT 1
+     ) source ON true
      WHERE c.id = $1`,
     [id]
   )

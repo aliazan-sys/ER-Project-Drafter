@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listConversations, getConversation } from '../lib/api.js'
+import { formatAttributionLabel } from '../../shared/attribution.js'
 import ProjectDraftModal from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 
@@ -46,6 +47,7 @@ export default function HistoryPage() {
             <div className="page-title">{selected.title || 'Untitled project'}</div>
             <div className="page-sub">
               {modeLabel(selected.mode)} · {formatDate(selected.created_at)}
+              {formatAttributionLabel(selected) ? ` · ${formatAttributionLabel(selected)}` : ''}
             </div>
           </div>
           <button className="reopen" onClick={() => setSelected(null)}>
@@ -115,6 +117,9 @@ export default function HistoryPage() {
                   <span className="history-meta">
                     {it.message_count ?? 0} messages · {formatDate(it.created_at)}
                   </span>
+                  {formatAttributionLabel(it) && (
+                    <span className="history-source">{formatAttributionLabel(it)}</span>
+                  )}
                 </div>
                 <span className={`mode-badge ${modeKind(it.mode)}`}>{modeLabel(it.mode)}</span>
               </button>
