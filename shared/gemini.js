@@ -12,6 +12,11 @@ import { ORG_TYPES, ORG_SIZES } from './orgProfile.js'
 import { currencyForLocation } from './locationCurrency.js'
 import { CATEGORIES, MAX_CATEGORIES } from './categories.js'
 import { resolvePlace } from './places.js'
+import {
+  explicitBudgetFromMessages,
+  explicitCurrencyFromMessages,
+  proportionalBudgetRange,
+} from './budget.js'
 
 // Provider selection: Gemini direct by default. Now that Gemini billing is
 // enabled we route through the Gemini API (no rate limiting). OpenRouter stays
@@ -141,15 +146,17 @@ ${CATEGORIES.map((c) => `    "${c}"`).join('\n')}
   "28 September 2026"). Never use vague phrases like "Early July" or "Mid-July" —
   always commit to a specific day. Infer sensible defaults if the user didn't say.
 - budget.pricingType: best fit of Per Unit / Monthly Rate / Fixed Price / Not Sure.
-- budget.currency: match the submitter location: EU = EUR, UK = GBP, US = USD,
-  and every other country (or no location) = USD.
+- budget.currency: if the user explicitly supplies GBP, EUR or USD with their
+  budget, preserve that currency even when it differs from their location.
+  Otherwise match the submitter location: EU = EUR, UK = GBP, US = USD, and
+  every other country (or no location) = USD.
 - budget.estimatedCostFrom / budget.estimatedCostTo: the lower and upper bounds
   of a realistic cost range, each with the currency symbol (e.g. "£4,500" and
   "£5,500"). estimatedCostTo must be greater than or equal to estimatedCostFrom.
-  If the user gives a single exact figure, turn it into a range by spreading
-  around it rather than repeating the same number: normally ±50 (e.g. "400 USD"
-  -> From 350 To 450). For small budgets where ±50 would be too wide relative to
-  the amount, use a tighter spread of about ±20 (e.g. "60 USD" -> From 40 To 80).
+  If the user gives a single exact figure, turn it into a proportional range of
+  about ±5%, using a minimum spread of 3 currency units for very small budgets.
+  For example, "20 USD" becomes about From 17 To 23, "100 USD" becomes about
+  From 95 To 105, and "10,000 USD" becomes about From 9,500 To 10,500.
   Never let estimatedCostFrom go below zero — clamp the lower bound at 0.
 - budget.costEstimated: set to true when the user did NOT give any price figure and
   you had to estimate the cost range yourself from typical market rates. Set to false
@@ -587,12 +594,15 @@ export function shouldSuppressProfileSuggestions(
 //
 // Best-effort by design — see resolvePlace(): with no Maps key, or if the
 // lookup fails, the model's original text is passed through untouched.
-async function withResolvedLocation(draft) {
+async function withResolvedLocation(draft, explicitCurrency = '') {
   const location = draft?.orgProfile?.location
   if (!location) {
     return {
       ...draft,
-      budget: { ...(draft?.budget || {}), currency: 'USD' },
+      budget: {
+        ...(draft?.budget || {}),
+        currency: explicitCurrency || 'USD',
+      },
     }
   }
   const { value, resolved } = await resolvePlace(location)
@@ -600,7 +610,7 @@ async function withResolvedLocation(draft) {
     ...draft,
     budget: {
       ...(draft?.budget || {}),
-      currency: currencyForLocation(value),
+      currency: explicitCurrency || currencyForLocation(value),
     },
     orgProfile: {
       ...draft.orgProfile,
@@ -630,11 +640,36 @@ export async function generateDraftFromConversation(messages, { skipOrgProfile =
     transcript +
     '\n\nBased on this whole conversation, draft the full EqualReach project request now.'
 
-  const draft = await callModel({
+  let draft = await callModel({
       systemText: buildSystemInstruction(today(), { skipOrgProfile }),
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       schema: responseSchema,
     })
+
+  const explicitCurrency = explicitCurrencyFromMessages(messages)
+  const explicitBudget = explicitBudgetFromMessages(messages)
+  if (explicitCurrency) {
+    draft = {
+      ...draft,
+      budget: {
+        ...(draft?.budget || {}),
+        currency: explicitCurrency,
+      },
+    }
+  }
+  if (explicitBudget) {
+    const range = proportionalBudgetRange(explicitBudget.amount)
+    draft = {
+      ...draft,
+      budget: {
+        ...(draft?.budget || {}),
+        currency: explicitBudget.currency,
+        estimatedCostFrom: String(range.from),
+        estimatedCostTo: String(range.to),
+        costEstimated: false,
+      },
+    }
+  }
 
   if (skipOrgProfile) {
     return {
@@ -651,5 +686,5 @@ export async function generateDraftFromConversation(messages, { skipOrgProfile =
     }
   }
 
-  return withResolvedLocation(draft)
+  return withResolvedLocation(draft, explicitCurrency)
 }

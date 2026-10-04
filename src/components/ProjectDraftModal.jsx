@@ -1932,7 +1932,11 @@ function normalize(d = {}) {
       comments: '',
       ...(d.budget || {}),
       // Only GBP/EUR/USD are supported (matches the Bubble currency Option Set).
-      currency: currencyForLocation(d.orgProfile?.location),
+      // Preserve a supported currency explicitly supplied with the budget.
+      // Location remains the fallback when the draft has no usable currency.
+      currency: CURRENCIES.includes(String(d.budget?.currency || '').toUpperCase())
+        ? String(d.budget.currency).toUpperCase()
+        : currencyForLocation(d.orgProfile?.location),
       // The symbol is rendered by the field itself, so store just the number.
       estimatedCostFrom: numericOnly(d.budget?.estimatedCostFrom),
       estimatedCostTo: numericOnly(d.budget?.estimatedCostTo),
