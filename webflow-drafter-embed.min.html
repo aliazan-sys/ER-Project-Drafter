@@ -5,9 +5,12 @@
      Edit the readable file, then re-minify here. -->
 <script>
 (function(){
-var K='er_first_touch_attribution';
+var K='er_first_touch_attribution_v2';
+function ch(v){return(v||'').replace(/^www\./,'').toLowerCase()}
+function ie(v){var h=ch(v);return h==='equalreach.io'||h.slice(-14)==='.equalreach.io'}
+function sr(v){var h=ch(v);if(!h||ie(h))return'';return h==='mail.google.com'||h==='gmail.com'||h==='googlemail.com'?'gmail':h}
 function q(){return[].slice.call(document.querySelectorAll('iframe')).filter(function(f){var s=f.getAttribute('src')||'';if(s.indexOf('er-project-drafter')<0&&s.indexOf('embed=draft')<0)return false;return!(f.closest&&f.closest('#er-panel'))})}
-function a(){var z=new URLSearchParams(location.search);try{var s=JSON.parse(sessionStorage.getItem(K)||'null');if(s&&s.source&&s.landingPath)return s}catch(e){}var r='';try{r=new URL(document.referrer).hostname.replace(/^www\./,'').toLowerCase()}catch(e){}var h=location.hostname.replace(/^www\./,'').toLowerCase();if(r===h)r='';var k=['utm_source','utm_medium','utm_campaign','utm_term','utm_content','gclid','fbclid','msclkid'],c={source:(z.get('utm_source')||'').trim()||r||'direct',referrerHost:r,landingPath:location.pathname,params:{}};k.forEach(function(x){var v=z.get(x);if(v)c.params[x]=v});try{sessionStorage.setItem(K,JSON.stringify(c))}catch(e){}return c}
+function a(){var z=new URLSearchParams(location.search),k=['utm_source','utm_medium','utm_campaign','utm_term','utm_content','gclid','fbclid','msclkid'],t=k.some(function(x){return!!z.get(x)});if(!t)try{var s=JSON.parse(sessionStorage.getItem(K)||'null');if(s&&s.source&&s.landingPath)return s}catch(e){}var r='';try{r=ch(new URL(document.referrer).hostname)}catch(e){}var h=ch(location.hostname);if(r===h||ie(r)&&ie(h))r='';var c={source:(z.get('utm_source')||'').trim()||sr(r)||'direct',referrerHost:r,landingPath:location.pathname,params:{}};k.forEach(function(x){var v=z.get(x);if(v)c.params[x]=v});try{sessionStorage.setItem(K,JSON.stringify(c))}catch(e){}return c}
 function p(){var z=new URLSearchParams(location.search),v=z.get('initial_prompt'),c=a();q().forEach(function(f){try{var u=new URL(f.src,location.href),d=false;function s(k,v){if(!v||u.searchParams.get(k)===v)return;u.searchParams.set(k,v);d=true}s('initial_prompt',v&&v.trim());Object.keys(c.params).forEach(function(k){s(k,c.params[k])});s('er_source',c.source);s('er_referrer_host',c.referrerHost);s('er_landing_path',c.landingPath);if(d)f.src=u.toString()}catch(e){}})}
 function fit(){q().forEach(function(f){var r=f.getBoundingClientRect(),o=r.top+(window.scrollY||0),h=Math.max(480,window.innerHeight-o);if(Math.abs(r.height-h)<1)return;f.style.setProperty('height',h+'px','important')})}
 function hide(){if(!q().length||document.getElementById('er-hide'))return;var s=document.createElement('style');s.id='er-hide';s.textContent='#er-dock,#er-panel,#er-backdrop{display:none!important}';(document.head||document.documentElement).appendChild(s)}

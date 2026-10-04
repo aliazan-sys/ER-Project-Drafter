@@ -15,7 +15,23 @@
 <!-- ===================================================================== -->
 <script>
   (function () {
-    var ATTRIBUTION_KEY = 'er_first_touch_attribution';
+    var ATTRIBUTION_KEY = 'er_first_touch_attribution_v2';
+
+    function cleanHost(value) {
+      return (value || '').replace(/^www\./, '').toLowerCase();
+    }
+
+    function isEqualReachHost(value) {
+      var host = cleanHost(value);
+      return host === 'equalreach.io' || host.slice(-14) === '.equalreach.io';
+    }
+
+    function sourceFromReferrer(value) {
+      var host = cleanHost(value);
+      if (!host || isEqualReachHost(host)) return '';
+      if (host === 'mail.google.com' || host === 'gmail.com' || host === 'googlemail.com') return 'gmail';
+      return host;
+    }
 
     // Match the drafter frame by host rather than by query string, so this
     // works whether the embed URL is ?embed=draft, #/draft, or a bare link.
@@ -34,18 +50,23 @@
     // Assign only when values differ so the settle loop never reloads it twice.
     function firstTouchAttribution() {
       var pageParams = new URLSearchParams(window.location.search);
-      try {
-        var saved = JSON.parse(sessionStorage.getItem(ATTRIBUTION_KEY) || 'null');
-        if (saved && saved.source && saved.landingPath) return saved;
-      } catch (_) {}
+      var passthrough = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'msclkid'];
+      var hasCampaignContext = passthrough.some(function (key) { return Boolean(pageParams.get(key)); });
+      if (!hasCampaignContext) {
+        try {
+          var saved = JSON.parse(sessionStorage.getItem(ATTRIBUTION_KEY) || 'null');
+          if (saved && saved.source && saved.landingPath) return saved;
+        } catch (_) {}
+      }
 
       var referrerHost = '';
-      try { referrerHost = new URL(document.referrer).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) {}
-      var currentHost = window.location.hostname.replace(/^www\./, '').toLowerCase();
-      if (referrerHost === currentHost) referrerHost = '';
-      var passthrough = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'msclkid'];
+      try { referrerHost = cleanHost(new URL(document.referrer).hostname); } catch (_) {}
+      var currentHost = cleanHost(window.location.hostname);
+      if (referrerHost === currentHost || (isEqualReachHost(referrerHost) && isEqualReachHost(currentHost))) {
+        referrerHost = '';
+      }
       var attribution = {
-        source: (pageParams.get('utm_source') || '').trim() || referrerHost || 'direct',
+        source: (pageParams.get('utm_source') || '').trim() || sourceFromReferrer(referrerHost) || 'direct',
         referrerHost: referrerHost,
         landingPath: window.location.pathname,
         params: {},

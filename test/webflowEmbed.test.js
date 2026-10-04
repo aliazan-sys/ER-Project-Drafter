@@ -35,5 +35,8 @@ test('Webflow drafter embed forwards the acquisition contract', () => {
       assert.match(script, new RegExp(field), `${file} should forward ${field}`)
     }
     assert.match(script, /sessionStorage\.setItem\(/)
+    assert.match(script, /er_first_touch_attribution_v2/)
+    assert.match(script, /mail\.google\.com/)
+    assert.match(script, /equalreach\.io/)
   }
 })

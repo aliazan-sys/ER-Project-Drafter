@@ -31,6 +31,32 @@ function referrerHostname(referrer) {
   }
 }
 
+function normalizedHost(value) {
+  return cleanText(value, TEXT_LIMITS.referrerHost)?.toLowerCase().replace(/^www\./, '') || null
+}
+
+export function isInternalAttributionHost(value) {
+  const host = normalizedHost(value)
+  if (!host) return false
+  return (
+    host === 'equalreach.io' ||
+    host.endsWith('.equalreach.io') ||
+    host === 'er-project-drafter.vercel.app' ||
+    (host.startsWith('er-project-drafter-') && host.endsWith('.vercel.app'))
+  )
+}
+
+export function normalizeAcquisitionSource(value) {
+  const source = cleanText(value, TEXT_LIMITS.acquisitionSource)
+  if (!source) return null
+  const lower = source.toLowerCase().replace(/^www\./, '')
+  if (isInternalAttributionHost(lower)) return 'direct'
+  if (lower === 'gmail' || lower === 'gmail.com' || lower === 'mail.google.com' || lower === 'googlemail.com') {
+    return 'gmail'
+  }
+  return source
+}
+
 export function normalizeAttribution(input) {
   const value = input && typeof input === 'object' ? input : {}
   const normalized = {}
@@ -39,6 +65,9 @@ export function normalizeAttribution(input) {
     const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
     normalized[key] = cleanText(value[key] ?? value[snakeKey], limit)
   }
+
+  normalized.acquisitionSource = normalizeAcquisitionSource(normalized.acquisitionSource)
+  if (isInternalAttributionHost(normalized.referrerHost)) normalized.referrerHost = null
 
   return normalized
 }
@@ -77,10 +106,16 @@ export function attributionFromPage(href, referrer = '') {
 }
 
 export function formatAttributionLabel(input = {}) {
-  const primary = input.utm_source || input.acquisition_source || input.referrer_host
+  const primary = normalizeAcquisitionSource(
+    input.utm_source || input.utmSource ||
+      input.acquisition_source || input.acquisitionSource ||
+      input.referrer_host || input.referrerHost,
+  )
   if (!primary) return ''
-  const parts = [primary === 'direct' ? 'Direct' : primary]
-  if (input.utm_medium) parts.push(input.utm_medium)
-  if (input.utm_campaign) parts.push(input.utm_campaign)
+  const parts = [primary === 'direct' ? 'Direct' : primary === 'gmail' ? 'Gmail' : primary]
+  const medium = input.utm_medium || input.utmMedium
+  const campaign = input.utm_campaign || input.utmCampaign
+  if (medium) parts.push(medium)
+  if (campaign) parts.push(campaign)
   return `Source: ${parts.join(' · ')}`
 }
