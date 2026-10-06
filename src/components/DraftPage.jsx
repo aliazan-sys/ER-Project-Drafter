@@ -4,8 +4,9 @@ import { getConversationSessionId, startConversation, resetConversation } from '
 import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
+import { bubbleAppUrl } from '../lib/bubbleConfig.js'
 
-const SERVICES_URL = 'https://app.equalreach.io/version-93726/marketplace/services'
+const SERVICES_URL = bubbleAppUrl('/marketplace/services')
 
 // Openers offered on the empty state — the things people most often arrive at
 // the drafter wanting to do. Order is priority order: the narrow-screen rule in

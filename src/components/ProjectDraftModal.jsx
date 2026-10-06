@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { bubbleAppUrl } from '../lib/bubbleConfig.js'
 import {
   submitDraftSignup,
   submitDraftLogin,
@@ -57,7 +58,7 @@ const PRIVACY_URL =
   'https://equalreach.notion.site/EqualReach-Privacy-Policy-2025-25da08da675980cbb7bffca7683ba7e0'
 const TERMS_URL =
   'https://equalreach.notion.site/EqualReach-Terms-of-Service-2025-b1f8f4dec14c48c3b04b9b7f86038ddd'
-const BUBBLE_PROPOSALS_URL = 'https://app.equalreach.io/client/proposals'
+const BUBBLE_PROPOSALS_URL = bubbleAppUrl('/client/proposals')
 
 const PRICING = ['Per Unit', 'Monthly Rate', 'Fixed Price', 'Not Sure']
 // Icon per pricing type, shown on the price cards (Investment step).

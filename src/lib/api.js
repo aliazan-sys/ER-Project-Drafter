@@ -6,6 +6,11 @@ import {
   BUBBLE_ORG_TYPE_VALUES,
   BUBBLE_ORG_SIZE_VALUES,
 } from '../../shared/orgProfile.js'
+import {
+  BUBBLE_WORKFLOW_BASE_URL,
+  bubbleAppUrl,
+  bubbleWorkflowUrl,
+} from './bubbleConfig.js'
 
 // Stable anonymous identity — generated once, persisted in localStorage.
 // Lets the server filter history to this browser without requiring an account.
@@ -158,24 +163,19 @@ export async function fetchPlaceSuggestions(query, { signal } = {}) {
   }
 }
 
-// Every Bubble workflow used by this deployed app currently targets live.
-// There is deliberately no versioned workflow fallback.
-const BUBBLE_WORKFLOW_BASE =
-  'https://admin-83903.bubbleapps.io/api/1.1/wf'
-
 export function bubbleWorkflowBaseForHost(_hostname = '') {
-  return BUBBLE_WORKFLOW_BASE
+  return BUBBLE_WORKFLOW_BASE_URL
 }
 
 const CREATE_USER_AND_DRAFT_URL =
-  `${BUBBLE_WORKFLOW_BASE}/webhook-create-user-and-draft-project`
+  bubbleWorkflowUrl('/webhook-create-user-and-draft-project')
 
 const EXISTING_USER_DRAFT_URL =
-  `${BUBBLE_WORKFLOW_BASE}/webhook-draft-project`
+  bubbleWorkflowUrl('/webhook-draft-project')
 
 // The dedicated Bubble-app embed uses its existing-user internal workflow.
 const BUBBLE_EMBED_DRAFT_URL =
-  'https://admin-83903.bubbleapps.io/api/1.1/wf/webhook-draft-project_internal'
+  bubbleWorkflowUrl('/webhook-draft-project_internal')
 
 // The Bubble workflow types several params as Option Sets / Date / number, so
 // the free-text draft values must be coerced to match before sending.
@@ -272,10 +272,10 @@ export function formatDisplayDate(value) {
 // `ai_redirect=yes` marks this as an arrival from the AI drafter, so the web
 // app sends them straight in instead of bouncing them to /login. No token
 // rides along — the app resolves the draft itself.
-export const REDIRECT_URL = 'https://app.equalreach.io/redirect?ai_redirect=yes'
+export const REDIRECT_URL = bubbleAppUrl('/redirect?ai_redirect=yes')
 
 // Where an existing account is sent instead: they authenticate normally.
-export const LOGIN_URL = 'https://app.equalreach.io/login'
+export const LOGIN_URL = bubbleAppUrl('/login')
 
 // 32 hex chars of CSPRNG randomness, sent to the workflow as
 // `ai_drafter_token`. No longer echoed in the redirect URL — the web app is
@@ -393,10 +393,10 @@ function after(ms, value) {
 // carrying whatever session it wants to hand over. We never construct that URL
 // ourselves.
 const LOGIN_WORKFLOW_URL =
-  `${BUBBLE_WORKFLOW_BASE}/log-in`
+  bubbleWorkflowUrl('/log-in')
 
 const EXISTING_USER_LOGIN_URL =
-  `${BUBBLE_WORKFLOW_BASE}/log-in`
+  bubbleWorkflowUrl('/log-in')
 
 // Same ceiling as the duplicate check. Past it we stop waiting and fall back to
 // the plain redirect — the account and draft already exist by then, so the
