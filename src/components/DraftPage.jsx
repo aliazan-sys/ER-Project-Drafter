@@ -82,7 +82,9 @@ function ChatPanel({
   )
   const [status, setStatus] = useState('chatting') // chatting | thinking | drafting | done | error
   const [draft, setDraft] = useState(null)
-  const [restoring, setRestoring] = useState(isPlatformEmbed)
+  const [restoring, setRestoring] = useState(() => Boolean(
+    isPlatformEmbed && conversationId && existingUserId && existingProjectId,
+  ))
   const [modalOpen, setModalOpen] = useState(false)
   // Lives out here so closing and reopening the wizard resumes where they left
   // off — the modal itself unmounts and would forget. Starts on Review: the
@@ -303,7 +305,7 @@ function ChatPanel({
   }
 
   useEffect(() => {
-    if (!isPlatformEmbed || !existingUserId || !existingProjectId) {
+    if (!isPlatformEmbed || !conversationId || !existingUserId || !existingProjectId) {
       setRestoring(false)
       return undefined
     }
@@ -392,8 +394,9 @@ function ChatPanel({
         </button>
       )}
       {restoring ? (
-        <div className="chat-welcome">
-          <p className="chat-welcome-sub">Loading conversationâ€¦</p>
+        <div className="conversation-loader" role="status" aria-live="polite">
+          <span className="conversation-loader-spinner" aria-hidden="true" />
+          <span>Loading conversation</span>
         </div>
       ) : !hasStarted ? (
         <div className="chat-welcome">
