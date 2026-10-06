@@ -60,6 +60,66 @@ export async function getAdminSession() {
   return data
 }
 
+export async function savePlatformConversation({ u, p, messages, funnelSessionId }) {
+  const res = await fetch('/api/platform-conversation', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ u, p, messages, funnelSessionId }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data.conversation
+}
+
+export async function fetchPlatformConversation({ u, p, id = '' }) {
+  const query = new URLSearchParams({ u, p })
+  if (id) query.set('id', id)
+  const res = await fetch(`/api/platform-conversation?${query}`, {
+    headers: { 'X-Visitor-ID': getVisitorId() },
+  })
+  if (res.status === 404) return null
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data.conversation
+}
+
+export async function attachPlatformConversation({ u, p, conversationId, aiDrafterToken }) {
+  const res = await fetch('/api/platform-conversation', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      u,
+      p,
+      ai_drafter_token: aiDrafterToken || generateDrafterToken(),
+      id: conversationId,
+      action: 'attach',
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(errorMessageOf(data) || `Unable to attach the conversation (${res.status}).`)
+  }
+  return data
+}
+
+export async function syncPlatformDraftToBubble({ u, p, conversationId, draft, aiDrafterToken }) {
+  const payload = buildSubmissionPayload('', draft, {
+    userId: u,
+    projectId: p,
+    conversationId,
+  }, aiDrafterToken || generateDrafterToken())
+  delete payload.email
+  delete payload.password
+  const res = await fetch('/api/platform-conversation', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ u, p, id: conversationId, action: 'sync_draft', payload }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(errorMessageOf(data) || `Unable to update the project (${res.status}).`)
+  return data
+}
+
 export async function loginAdmin(email, password) {
   const res = await fetch('/api/admin-auth', {
     method: 'POST',
@@ -280,7 +340,7 @@ export const LOGIN_URL = bubbleAppUrl('/login')
 // 32 hex chars of CSPRNG randomness, sent to the workflow as
 // `ai_drafter_token`. No longer echoed in the redirect URL — the web app is
 // expected to resolve the draft itself.
-function generateDrafterToken() {
+export function generateDrafterToken() {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
@@ -307,6 +367,8 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     // Existing-user Bubble embeds identify the signed-in user by Bubble's
     // unique id instead of sending or exposing their email.
     ...(contact.userId ? { u: contact.userId } : { email }),
+    ...(contact.projectId ? { p: contact.projectId } : {}),
+    ...(contact.conversationId ? { conversation_id: contact.conversationId } : {}),
     ai_drafter_token: aiDrafterToken,
     // Every draft that reaches this endpoint came out of the AI drafter, so this
     // is constant here. It exists so the web app can tell these apart from
@@ -605,7 +667,7 @@ export async function submitDraftLogin(
   contact = {},
   { bubbleEmbed = false, drafterSource = 'website' } = {},
 ) {
-  const aiDrafterToken = generateDrafterToken()
+  const aiDrafterToken = contact.aiDrafterToken || generateDrafterToken()
   const payload = buildSubmissionPayload(email, draft, contact, aiDrafterToken)
   let workflowUrl = EXISTING_USER_DRAFT_URL
 

@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { sendChat, generateDraftFromChat } from '../lib/api.js'
+import {
+  attachPlatformConversation,
+  fetchPlatformConversation,
+  generateDrafterToken,
+  generateDraftFromChat,
+  savePlatformConversation,
+  sendChat,
+  syncPlatformDraftToBubble,
+} from '../lib/api.js'
 import { getConversationSessionId, startConversation, resetConversation } from '../lib/tracking.js'
 import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
@@ -23,6 +31,8 @@ const STARTERS = [
 export default function DraftPage({
   submissionMode = 'public',
   existingUserId = '',
+  existingProjectId = '',
+  conversationId = '',
   drafterSource = 'website',
 }) {
   const [chatKey, setChatKey] = useState(0)
@@ -42,6 +52,8 @@ export default function DraftPage({
           onNewChat={startNewChat}
           submissionMode={submissionMode}
           existingUserId={existingUserId}
+          existingProjectId={existingProjectId}
+          conversationId={conversationId}
           drafterSource={drafterSource}
         />
       </div>
@@ -49,8 +61,16 @@ export default function DraftPage({
   )
 }
 
-function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource }) {
+function ChatPanel({
+  onNewChat,
+  submissionMode,
+  existingUserId,
+  existingProjectId,
+  conversationId,
+  drafterSource,
+}) {
   const skipOrgProfile = submissionMode === 'bubble-existing-user'
+  const isPlatformEmbed = drafterSource === 'platform' && skipOrgProfile
   const initialPromptFromQuery = (
     new URLSearchParams(window.location.search).get('initial_prompt') || ''
   ).trim().slice(0, 2000)
@@ -62,6 +82,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
   )
   const [status, setStatus] = useState('chatting') // chatting | thinking | drafting | done | error
   const [draft, setDraft] = useState(null)
+  const [restoring, setRestoring] = useState(isPlatformEmbed)
   const [modalOpen, setModalOpen] = useState(false)
   // Lives out here so closing and reopening the wizard resumes where they left
   // off — the modal itself unmounts and would forget. Starts on Review: the
@@ -76,6 +97,10 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
   const [suggestions, setSuggestions] = useState([])
   const scrollRef = useRef(null)
   const initialPromptSentRef = useRef(false)
+  const aiDrafterTokenRef = useRef('')
+  if (isPlatformEmbed && !aiDrafterTokenRef.current) {
+    aiDrafterTokenRef.current = generateDrafterToken()
+  }
 
   const busy = status === 'thinking' || status === 'drafting'
   const hasStarted = messages.some((m) => m.role === 'user')
@@ -102,13 +127,24 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
 
+  async function syncPlatformDraft(result, id) {
+    await syncPlatformDraftToBubble({
+      u: existingUserId,
+      p: existingProjectId,
+      conversationId: id,
+      draft: result,
+      aiDrafterToken: aiDrafterTokenRef.current,
+    })
+  }
+
   async function buildDraft(convo, doneText) {
     setStatus('drafting')
     try {
-      const { draft: result } = await generateDraftFromChat(convo, {
+      const { draft: result, id } = await generateDraftFromChat(convo, {
         skipOrgProfile,
         drafterSource,
         funnelSessionId: getConversationSessionId(),
+        ...(isPlatformEmbed ? { u: existingUserId, p: existingProjectId } : {}),
       })
       setDraft(result)
       // Fresh content — the old position no longer means anything, so open on
@@ -117,7 +153,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
       setDraftStep(REVIEW_STEP_INDEX)
       setDraftVisited([])
       setStatus('done')
-      setModalOpen(true)
+      if (!isPlatformEmbed) setModalOpen(true)
       setMessages((m) => [
         ...m,
         {
@@ -127,6 +163,19 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
             "Perfect — I have everything I need. I've drafted your project request. Review and refine it before you submit.",
         },
       ])
+      if (isPlatformEmbed) {
+        try {
+          await syncPlatformDraft(result, id)
+        } catch (syncError) {
+          setMessages((m) => [
+            ...m,
+            {
+              role: 'bot',
+              text: `Your draft is saved. EqualReach could not update the project yet (${syncError.message}); reopening this page will retry.`,
+            },
+          ])
+        }
+      }
     } catch (err) {
       setStatus('error')
       setMessages((m) => [
@@ -148,6 +197,31 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
     setTimeout(scrollToBottom, 50)
 
     try {
+      if (isPlatformEmbed) {
+        if (!existingUserId || !existingProjectId) {
+          throw new Error('The Bubble user ID or project ID is missing from the Platform Drafter URL.')
+        }
+        const saved = await savePlatformConversation({
+          u: existingUserId,
+          p: existingProjectId,
+          messages: convo,
+          funnelSessionId: getConversationSessionId(),
+        })
+        if (saved?.id) {
+          if (saved.bubble_sync_status !== 'synced') {
+            try {
+              await attachPlatformConversation({
+                u: existingUserId,
+                p: existingProjectId,
+                conversationId: saved.id,
+                aiDrafterToken: aiDrafterTokenRef.current,
+              })
+            } catch (syncError) {
+              console.warn('[platform-drafter] initial Bubble conversation link failed:', syncError.message)
+            }
+          }
+        }
+      }
       // Answering "what would you like to change?" — acknowledge, then redraft
       // straight away rather than re-interviewing them.
       if (refining) {
@@ -168,6 +242,14 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
       })
       const withReply = [...convo, { role: 'bot', text: reply }]
       setMessages(withReply)
+      if (isPlatformEmbed) {
+        await savePlatformConversation({
+          u: existingUserId,
+          p: existingProjectId,
+          messages: withReply,
+          funnelSessionId: getConversationSessionId(),
+        })
+      }
       setTimeout(scrollToBottom, 50)
       if (readyToDraft) {
         await buildDraft(withReply)
@@ -221,14 +303,72 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
   }
 
   useEffect(() => {
+    if (!isPlatformEmbed || !existingUserId || !existingProjectId) {
+      setRestoring(false)
+      return undefined
+    }
+    let live = true
+    fetchPlatformConversation({
+      u: existingUserId,
+      p: existingProjectId,
+      id: conversationId,
+    })
+      .then(async (conversation) => {
+        if (!live || !conversation) return
+        setMessages(Array.isArray(conversation.messages) ? conversation.messages : [])
+        if (conversation.draft) setDraft(conversation.draft)
+        setStatus(conversation.status === 'completed' ? 'done' : 'chatting')
+        if (conversation.status !== 'completed' && conversation.bubble_sync_status !== 'synced') {
+          try {
+            await attachPlatformConversation({
+              u: existingUserId,
+              p: existingProjectId,
+              conversationId: conversation.id,
+              aiDrafterToken: aiDrafterTokenRef.current,
+            })
+          } catch (syncError) {
+            setMessages((items) => [
+              ...items,
+              { role: 'bot', text: `Your conversation is saved, but Bubble could not link it to this project yet (${syncError.message}). It will retry next time you open the drafter.` },
+            ])
+          }
+        } else if (
+          conversation.status === 'completed' &&
+          conversation.draft &&
+          conversation.bubble_sync_status !== 'synced'
+        ) {
+          try {
+            await syncPlatformDraft(conversation.draft, conversation.id)
+          } catch (syncError) {
+            setMessages((items) => [
+              ...items,
+              {
+                role: 'bot',
+                text: `This conversation is complete and read-only. The project update will retry when this page is reopened (${syncError.message}).`,
+              },
+            ])
+          }
+        }
+      })
+      .catch((err) => {
+        if (!live) return
+        setStatus('error')
+        setMessages([{ role: 'bot', text: `Unable to restore this conversation: ${err.message}` }])
+      })
+      .finally(() => { if (live) setRestoring(false) })
+    return () => { live = false }
+  }, [isPlatformEmbed, existingUserId, existingProjectId, conversationId])
+
+  useEffect(() => {
     if (initialPromptSentRef.current) return
+    if (restoring) return
     const storedPrompt = localStorage.getItem('er_initial_prompt')?.trim()
     const prompt = initialPromptFromQuery || (storedPrompt || '').slice(0, 2000)
     if (!prompt) return
     initialPromptSentRef.current = true
     localStorage.removeItem('er_initial_prompt')
     sendMessage(prompt)
-  }, [])
+  }, [restoring])
 
   const textareaProps = {
     ref: textareaRef,
@@ -251,7 +391,11 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
           Back to services
         </button>
       )}
-      {!hasStarted ? (
+      {restoring ? (
+        <div className="chat-welcome">
+          <p className="chat-welcome-sub">Loading conversationâ€¦</p>
+        </div>
+      ) : !hasStarted ? (
         <div className="chat-welcome">
           <span className="drafter-badge">
             <SparkleIcon size={15} />
@@ -303,7 +447,7 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
           </main>
 
           <footer className="composer">
-            {draft && !busy && (
+            {draft && !busy && !isPlatformEmbed && (
               <button className="preview-cta" onClick={() => setModalOpen(true)}>
                 <DocIcon />
                 Preview your project draft
@@ -320,6 +464,9 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
               </div>
             )}
 
+            {isPlatformEmbed && status === 'done' ? (
+              <p className="composer-hint">This conversation is complete and available for review only.</p>
+            ) : (
             <form onSubmit={handleSend} className="composer-inner composer-pill">
               <textarea
                 {...textareaProps}
@@ -347,11 +494,12 @@ function ChatPanel({ onNewChat, submissionMode, existingUserId, drafterSource })
                 </button>
               )}
             </form>
+            )}
           </footer>
         </>
       )}
 
-      {modalOpen && draft && (
+      {!isPlatformEmbed && modalOpen && draft && (
         <ProjectDraftModal
           draft={draft}
           submissionMode={submissionMode}

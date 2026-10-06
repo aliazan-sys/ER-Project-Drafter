@@ -5,11 +5,15 @@ import DraftPage from './DraftPage.jsx'
 export default function BubbleDraftPage() {
   const params = new URLSearchParams(window.location.search)
   const existingUserId = (params.get('u') || '').trim()
+  const existingProjectId = (params.get('p') || '').trim()
+  const conversationId = (params.get('conversation') || '').trim()
 
   return (
     <DraftPage
       submissionMode="bubble-existing-user"
       existingUserId={existingUserId}
+      existingProjectId={existingProjectId}
+      conversationId={conversationId}
     />
   )
 }

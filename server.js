@@ -21,11 +21,20 @@ import {
 } from './shared/gemini.js'
 import {
   saveSubmission,
+  completePlatformConversation,
+  getPlatformConversation,
+  recordPlatformSync,
+  upsertPlatformConversation,
   listConversations,
   getConversation,
   recordStage,
   funnelSummary,
 } from './shared/store.js'
+import {
+  callBubbleDraftWorkflow,
+  normalizeBubbleId,
+  verifyProjectOwnership,
+} from './shared/platformConversation.js'
 import { suggestPlaces, hasPlacesKey, PlacesError } from './shared/places.js'
 import {
   adminAuthConfigured,
@@ -117,18 +126,43 @@ app.post('/api/chat', async (req, res) => {
 // Generates and persists a draft from the Project Drafter conversation.
 app.post('/api/draft', async (req, res) => {
   try {
-    const { messages, skipOrgProfile, drafterSource, funnelSessionId } = req.body || {}
+    const { messages, skipOrgProfile, drafterSource, funnelSessionId, u, p } = req.body || {}
+    const mode = drafterSource === 'platform' ? 'platform' : 'website'
+    let bubbleUserId = ''
+    let bubbleProjectId = ''
+    if (mode === 'platform') {
+      bubbleUserId = normalizeBubbleId(u)
+      bubbleProjectId = normalizeBubbleId(p)
+      if (!bubbleUserId || !bubbleProjectId) {
+        return res.status(400).json({ error: 'Platform drafts require Bubble user ID (u) and project ID (p).' })
+      }
+      if (!(await verifyProjectOwnership(bubbleUserId, bubbleProjectId))) {
+        return res.status(403).json({ error: 'This user does not own the requested project.' })
+      }
+    }
     const draft = await generateDraftFromConversation(messages, {
       skipOrgProfile: skipOrgProfile === true,
     })
-    const mode = drafterSource === 'platform' ? 'platform' : 'website'
-    const id = await saveSubmission({
-      mode,
-      messages,
-      draft,
-      visitorId: req.get('X-Visitor-ID') || null,
-      funnelSessionId,
-    })
+    let id
+    if (mode === 'platform') {
+      id = await completePlatformConversation({
+        bubbleUserId,
+        bubbleProjectId,
+        messages,
+        draft,
+        visitorId: req.get('X-Visitor-ID') || null,
+        funnelSessionId,
+      })
+      if (!id) return res.status(503).json({ error: 'Platform conversation storage is not configured.' })
+    } else {
+      id = await saveSubmission({
+        mode,
+        messages,
+        draft,
+        visitorId: req.get('X-Visitor-ID') || null,
+        funnelSessionId,
+      })
+    }
 
     res.json({ draft, id })
   } catch (err) {
@@ -136,6 +170,111 @@ app.post('/api/draft', async (req, res) => {
       return res.status(err.status).json({ error: err.message, detail: err.detail })
     }
     res.status(500).json({ error: 'Unexpected server error.', detail: String(err) })
+  }
+})
+
+async function authorizePlatformConversation(req, res) {
+  const input = req.method === 'GET' ? req.query || {} : req.body || {}
+  const bubbleUserId = normalizeBubbleId(input.u)
+  const bubbleProjectId = normalizeBubbleId(input.p)
+  if (!bubbleUserId || !bubbleProjectId) {
+    res.status(400).json({ error: 'Both Bubble user ID (u) and project ID (p) are required.' })
+    return null
+  }
+  if (!(await verifyProjectOwnership(bubbleUserId, bubbleProjectId))) {
+    res.status(403).json({ error: 'This user does not own the requested project.' })
+    return null
+  }
+  return { input, bubbleUserId, bubbleProjectId }
+}
+
+app.get('/api/platform-conversation', async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store')
+  try {
+    const auth = await authorizePlatformConversation(req, res)
+    if (!auth) return
+    const conversation = await getPlatformConversation({
+      bubbleUserId: auth.bubbleUserId,
+      bubbleProjectId: auth.bubbleProjectId,
+      conversationId: String(auth.input.id || '').trim(),
+    })
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found.' })
+    res.json({ conversation })
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load the conversation.', detail: String(err) })
+  }
+})
+
+app.post('/api/platform-conversation', async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store')
+  try {
+    const auth = await authorizePlatformConversation(req, res)
+    if (!auth) return
+    const conversationId = String(auth.input.id || '').trim()
+    if (auth.input.action === 'attach' || auth.input.action === 'sync_draft') {
+        const conversation = await getPlatformConversation({
+          bubbleUserId: auth.bubbleUserId,
+          bubbleProjectId: auth.bubbleProjectId,
+          conversationId,
+        })
+        if (!conversation) return res.status(404).json({ error: 'Conversation not found.' })
+        if (auth.input.action === 'sync_draft' && (conversation.status !== 'completed' || !conversation.draft)) {
+          return res.status(409).json({ error: 'The conversation does not have a completed draft yet.' })
+        }
+        const payload = auth.input.action === 'attach'
+          ? {
+              u: auth.bubbleUserId,
+              p: auth.bubbleProjectId,
+              ai_drafter_token: String(auth.input.ai_drafter_token || ''),
+              conversation_id: conversation.id,
+              created_by_ai: true,
+              conversation_only: true,
+            }
+          : auth.input.payload
+        if (
+          !payload ||
+          String(payload.u || '') !== auth.bubbleUserId ||
+          String(payload.p || '') !== auth.bubbleProjectId ||
+          String(payload.conversation_id || '') !== conversation.id
+        ) {
+          return res.status(400).json({ error: 'Bubble workflow payload does not match the authorized project and conversation.' })
+        }
+        try {
+          await callBubbleDraftWorkflow(payload)
+          await recordPlatformSync({
+            conversationId,
+            bubbleUserId: auth.bubbleUserId,
+            bubbleProjectId: auth.bubbleProjectId,
+            ok: true,
+          })
+          return res.json({ ok: true })
+        } catch (err) {
+          await recordPlatformSync({
+            conversationId,
+            bubbleUserId: auth.bubbleUserId,
+            bubbleProjectId: auth.bubbleProjectId,
+            ok: false,
+            error: err.message,
+          })
+          return res.status(502).json({ error: err.message || 'Bubble project update failed.' })
+        }
+    }
+    const messages = Array.isArray(auth.input.messages) ? auth.input.messages.slice(0, 200) : []
+    if (!messages.some((message) => message?.role === 'user')) {
+      return res.status(400).json({ error: 'At least one user message is required.' })
+    }
+    const conversation = await upsertPlatformConversation({
+      bubbleUserId: auth.bubbleUserId,
+      bubbleProjectId: auth.bubbleProjectId,
+      messages,
+      visitorId: req.get('X-Visitor-ID') || null,
+      funnelSessionId: auth.input.funnelSessionId,
+    })
+    if (!conversation) return res.status(503).json({ error: 'Conversation storage is not configured.' })
+    res.json({ conversation })
+  } catch (err) {
+    console.error('[/api/platform-conversation] error:', err)
+    res.status(500).json({ error: 'Could not save or sync the conversation.' })
   }
 })
 

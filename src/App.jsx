@@ -139,12 +139,16 @@ export default function App() {
 
   if (EMBED_PLATFORM) {
     const existingUserId = (params.get('u') || '').trim()
+    const existingProjectId = (params.get('p') || '').trim()
+    const conversationId = (params.get('conversation') || '').trim()
     return (
       <div className="app wide bubble-drafter">
         <PlatformDraftPage
           key="platform-draft-embed"
           submissionMode="bubble-existing-user"
           existingUserId={existingUserId}
+          existingProjectId={existingProjectId}
+          conversationId={conversationId}
         />
       </div>
     )

@@ -53,16 +53,30 @@ function ensureSchema() {
         );
         ALTER TABLE conversations ADD COLUMN IF NOT EXISTS visitor_id text;
         ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_session_id text;
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bubble_user_id text;
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bubble_project_id text;
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'completed';
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bubble_sync_status text NOT NULL DEFAULT 'not_applicable';
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bubble_sync_error text;
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bubble_sync_attempts int NOT NULL DEFAULT 0;
+        ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bubble_synced_at timestamptz;
         ALTER TABLE conversations ALTER COLUMN mode SET DEFAULT 'website';
         CREATE INDEX IF NOT EXISTS conversations_visitor_idx ON conversations(visitor_id);
         CREATE INDEX IF NOT EXISTS conversations_funnel_session_idx ON conversations(funnel_session_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS conversations_bubble_project_unique
+          ON conversations(bubble_project_id) WHERE bubble_project_id IS NOT NULL;
         CREATE TABLE IF NOT EXISTS drafts (
           id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           conversation_id uuid REFERENCES conversations(id) ON DELETE CASCADE,
           title           text,
           draft           jsonb NOT NULL,
-          created_at      timestamptz NOT NULL DEFAULT now()
+          created_at      timestamptz NOT NULL DEFAULT now(),
+          updated_at      timestamptz NOT NULL DEFAULT now()
         );
+        ALTER TABLE drafts ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+        CREATE UNIQUE INDEX IF NOT EXISTS drafts_conversation_unique
+          ON drafts(conversation_id) WHERE conversation_id IS NOT NULL;
       `)
       .catch((err) => {
         // Reset so a later call can retry after a transient failure.
@@ -71,6 +85,150 @@ function ensureSchema() {
       })
   }
   return _schemaReady
+}
+
+export async function upsertPlatformConversation({
+  bubbleUserId,
+  bubbleProjectId,
+  messages = [],
+  visitorId,
+  funnelSessionId,
+}) {
+  if (!isConfigured()) return null
+  await ensureSchema()
+  const { rows } = await pool().query(
+    `INSERT INTO conversations (
+       mode, messages, visitor_id, funnel_session_id, bubble_user_id,
+       bubble_project_id, status, bubble_sync_status
+     )
+     VALUES ('platform', $1::jsonb, $2, $3, $4, $5, 'in_progress', 'pending')
+     ON CONFLICT (bubble_project_id) WHERE bubble_project_id IS NOT NULL
+     DO UPDATE SET
+       messages = EXCLUDED.messages,
+       visitor_id = COALESCE(conversations.visitor_id, EXCLUDED.visitor_id),
+       funnel_session_id = COALESCE(conversations.funnel_session_id, EXCLUDED.funnel_session_id),
+       bubble_user_id = EXCLUDED.bubble_user_id,
+       updated_at = now(),
+       bubble_sync_status = CASE
+         WHEN conversations.bubble_sync_status = 'synced' THEN 'synced'
+         ELSE 'pending'
+       END
+     RETURNING id, bubble_project_id, status, messages, created_at, updated_at,
+               bubble_sync_status`,
+    [
+      JSON.stringify(messages),
+      visitorId || null,
+      funnelSessionId || null,
+      bubbleUserId,
+      bubbleProjectId,
+    ],
+  )
+  return rows[0] || null
+}
+
+export async function completePlatformConversation({
+  bubbleUserId,
+  bubbleProjectId,
+  messages = [],
+  draft,
+  visitorId,
+  funnelSessionId,
+}) {
+  if (!isConfigured() || !draft) return null
+  await ensureSchema()
+  const client = await pool().connect()
+  try {
+    await client.query('BEGIN')
+    const conv = await client.query(
+      `INSERT INTO conversations (
+         mode, messages, visitor_id, funnel_session_id, bubble_user_id,
+         bubble_project_id, status, bubble_sync_status
+       )
+       VALUES ('platform', $1::jsonb, $2, $3, $4, $5, 'completed', 'pending')
+       ON CONFLICT (bubble_project_id) WHERE bubble_project_id IS NOT NULL
+       DO UPDATE SET
+         messages = EXCLUDED.messages,
+         bubble_user_id = EXCLUDED.bubble_user_id,
+         status = 'completed',
+         updated_at = now(),
+         bubble_sync_status = 'pending',
+         bubble_sync_error = null
+       RETURNING id`,
+      [
+        JSON.stringify(messages),
+        visitorId || null,
+        funnelSessionId || null,
+        bubbleUserId,
+        bubbleProjectId,
+      ],
+    )
+    const conversationId = conv.rows[0].id
+    await client.query(
+      `INSERT INTO drafts (conversation_id, title, draft)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (conversation_id) WHERE conversation_id IS NOT NULL
+       DO UPDATE SET title = EXCLUDED.title, draft = EXCLUDED.draft, updated_at = now()`,
+      [conversationId, draft.title || null, JSON.stringify(draft)],
+    )
+    await client.query('COMMIT')
+    return conversationId
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPlatformConversation({ bubbleUserId, bubbleProjectId, conversationId }) {
+  if (!isConfigured()) return null
+  await ensureSchema()
+  const params = [bubbleUserId, bubbleProjectId]
+  let idFilter = ''
+  if (conversationId) {
+    params.push(conversationId)
+    idFilter = ` AND c.id = $${params.length}`
+  }
+  const { rows } = await pool().query(
+    `SELECT c.id, c.bubble_project_id, c.status, c.messages, c.created_at, c.updated_at,
+            c.bubble_sync_status, d.draft
+     FROM conversations c
+     LEFT JOIN drafts d ON d.conversation_id = c.id
+     WHERE c.mode = 'platform'
+       AND c.bubble_user_id = $1
+       AND c.bubble_project_id = $2${idFilter}
+     LIMIT 1`,
+    params,
+  )
+  return rows[0] || null
+}
+
+export async function recordPlatformSync({
+  conversationId,
+  bubbleUserId,
+  bubbleProjectId,
+  ok,
+  error = '',
+}) {
+  if (!isConfigured() || !conversationId || !bubbleUserId || !bubbleProjectId) return false
+  await ensureSchema()
+  await pool().query(
+    `UPDATE conversations
+     SET bubble_sync_status = $2,
+         bubble_sync_error = $3,
+         bubble_sync_attempts = bubble_sync_attempts + 1,
+         bubble_synced_at = CASE WHEN $2 = 'synced' THEN now() ELSE bubble_synced_at END,
+         updated_at = now()
+     WHERE id = $1 AND mode = 'platform' AND bubble_user_id = $4 AND bubble_project_id = $5`,
+    [
+      conversationId,
+      ok ? 'synced' : 'failed',
+      ok ? null : String(error).slice(0, 1000),
+      bubbleUserId,
+      bubbleProjectId,
+    ],
+  )
+  return true
 }
 
 // The funnel counts LIVE traffic only. Vercel sets VERCEL_ENV to

@@ -112,6 +112,46 @@ src/lib/
 Reference Images/             The original 7-step form screenshots
 ```
 
+## Bubble Platform Drafter integration
+
+The Platform Drafter iframe takes the signed-in Bubble user ID as `u` and the
+already-created Bubble Project ID as `p`:
+
+```text
+https://er-project-drafter.vercel.app/?embed=platform&u=<URL-encoded-user-id>&p=<URL-encoded-project-id>
+```
+
+Bubble should store the returned AI conversation UUID in a text field on the
+Project (for example `ai_conversation_id`). The Project's **Review Conversation**
+button can reopen the iframe with `u`, `p`, and
+`conversation=<ai_conversation_id>`. Store the UUID, not a full URL.
+
+Before the Drafter saves, retrieves, or syncs a conversation, its server calls
+the Bubble `project_ownership_verification` workflow with
+`{ "user_id": "...", "project_id": "..." }` and expects Bubble's
+`response.authorized` result to be `true` or `"yes"`.
+That workflow must return `authorized: "yes"` only when the user's Projects
+contain the supplied Project; every other result denies access.
+
+On the first user message, the Drafter persists the transcript in its server
+database, then calls `webhook-draft-project_internal` with
+`conversation_only: true`, `u`, `p`, `conversation_id`, and
+`ai_drafter_token`. In this branch, Bubble should only attach the conversation
+UUID to the existing Project; it must not call project-create or change draft
+fields. When generation completes, the Drafter calls the same workflow with
+`u`, `p`, `conversation_id`, and the normalized `draft` object. That branch
+should update the already-created Project and skip creating a new one. Keep
+Bubble's ownership condition on both branches.
+
+Conversation persistence/restoration and Bubble workflow calls run through the
+Drafter server's `/api/platform-conversation` endpoint; the browser never calls
+Supabase or the project-update workflow directly. Incomplete conversations
+reopen editable; completed ones reopen read-only. If Bubble update fails after
+the draft is saved, the conversation row records a failed sync and reopening
+the Drafter retries the project update. Bubble should put its Project unique ID
+(`p`) and the stored UUID (`conversation`) into the Review Conversation button
+URL; the UUID is also checked against the owner and project when restoring.
+
 ## Changing the model
 
 - Set `GEMINI_MODEL` in `.env` (local) or Vercel env vars (prod).
