@@ -168,6 +168,8 @@ function ChatPanel({
       if (isPlatformEmbed) {
         try {
           await syncPlatformDraft(result, id)
+          navigateToBubbleProject()
+          return
         } catch (syncError) {
           setMessages((m) => [
             ...m,
@@ -185,6 +187,20 @@ function ChatPanel({
         { role: 'bot', text: `⚠️ I couldn't generate the draft: ${err.message}` },
       ])
     }
+  }
+
+  function navigateToBubbleProject() {
+    const url = bubbleAppUrl(`/client/project-request/${encodeURIComponent(existingProjectId)}`)
+    if (window.self === window.top) {
+      window.location.assign(url)
+      return
+    }
+    try {
+      window.top.location.href = url
+    } catch {
+      // If the iframe cannot navigate the top-level page, let the host handle it.
+    }
+    window.parent.postMessage({ type: 'er-navigate', url }, '*')
   }
 
   async function sendMessage(value) {
