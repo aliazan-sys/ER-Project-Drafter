@@ -140,6 +140,20 @@ function ChatPanel({
     })
   }
 
+  async function attachSavedPlatformConversation(saved) {
+    if (!isPlatformEmbed || !saved?.id || saved.bubble_sync_status === 'synced') return
+    try {
+      await attachPlatformConversation({
+        u: existingUserId,
+        p: existingProjectId,
+        conversationId: saved.id,
+        aiDrafterToken: aiDrafterTokenRef.current,
+      })
+    } catch (syncError) {
+      console.warn('[platform-drafter] Bubble conversation link failed:', syncError.message)
+    }
+  }
+
   async function buildDraft(convo, doneText) {
     setStatus('drafting')
     try {
@@ -170,7 +184,7 @@ function ChatPanel({
         try {
           await syncPlatformDraft(result, id)
           navigateToBubbleProject()
-          return
+          return true
         } catch (syncError) {
           setMessages((m) => [
             ...m,
@@ -179,14 +193,17 @@ function ChatPanel({
               text: `Your draft is saved. EqualReach could not update the project yet (${syncError.message}); reopening this page will retry.`,
             },
           ])
+          return false
         }
       }
+      return true
     } catch (err) {
       setStatus('error')
       setMessages((m) => [
         ...m,
         { role: 'bot', text: `⚠️ I couldn't generate the draft: ${err.message}` },
       ])
+      return false
     }
   }
 
@@ -215,31 +232,18 @@ function ChatPanel({
     setStatus('thinking')
     setTimeout(scrollToBottom, 50)
 
+    let savedPlatformConversation = null
     try {
       if (isPlatformEmbed) {
         if (!existingUserId || !existingProjectId) {
           throw new Error('The Bubble user ID or project ID is missing from the Platform Drafter URL.')
         }
-        const saved = await savePlatformConversation({
+        savedPlatformConversation = await savePlatformConversation({
           u: existingUserId,
           p: existingProjectId,
           messages: convo,
           funnelSessionId: getConversationSessionId(),
         })
-        if (saved?.id) {
-          if (saved.bubble_sync_status !== 'synced') {
-            try {
-              await attachPlatformConversation({
-                u: existingUserId,
-                p: existingProjectId,
-                conversationId: saved.id,
-                aiDrafterToken: aiDrafterTokenRef.current,
-              })
-            } catch (syncError) {
-              console.warn('[platform-drafter] initial Bubble conversation link failed:', syncError.message)
-            }
-          }
-        }
       }
       // Answering "what would you like to change?" — acknowledge, then redraft
       // straight away rather than re-interviewing them.
@@ -247,10 +251,11 @@ function ChatPanel({
         const withReply = [...convo, { role: 'bot', text: 'Refining your project request now' }]
         setMessages(withReply)
         setTimeout(scrollToBottom, 50)
-        await buildDraft(
+        const draftSynced = await buildDraft(
           withReply,
           "All done — I've updated your project request with those changes. Have a look.",
         )
+        if (!draftSynced) await attachSavedPlatformConversation(savedPlatformConversation)
         setRefining(false)
         return
       }
@@ -263,7 +268,7 @@ function ChatPanel({
       const withReply = [...convo, { role: 'bot', text: reply, suggestions: replySuggestions }]
       setMessages(withReply)
       if (isPlatformEmbed) {
-        await savePlatformConversation({
+        savedPlatformConversation = await savePlatformConversation({
           u: existingUserId,
           p: existingProjectId,
           messages: withReply,
@@ -272,10 +277,14 @@ function ChatPanel({
       }
       setTimeout(scrollToBottom, 50)
       if (readyToDraft) {
-        await buildDraft(withReply)
+        const draftSynced = await buildDraft(withReply)
+        if (!draftSynced) await attachSavedPlatformConversation(savedPlatformConversation)
       } else {
         setSuggestions(replySuggestions)
         setStatus('chatting')
+        // Assigning the Bubble conversation ID can reload the iframe. Save and
+        // render this reply first so that reload restores the complete turn.
+        await attachSavedPlatformConversation(savedPlatformConversation)
       }
     } catch (err) {
       setStatus('error')
@@ -284,6 +293,7 @@ function ChatPanel({
         ...m,
         { role: 'bot', text: `⚠️ Sorry, something went wrong: ${err.message}` },
       ])
+      await attachSavedPlatformConversation(savedPlatformConversation)
     }
   }
 
