@@ -18,3 +18,7 @@ export function suggestionsFromMessages(messages) {
       .filter(Boolean),
   )].slice(0, 4)
 }
+
+export function hasPendingAssistantReply(messages) {
+  return Array.isArray(messages) && messages[messages.length - 1]?.role === 'user'
+}

@@ -13,7 +13,10 @@ import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
 import { bubbleAppUrl } from '../lib/bubbleConfig.js'
-import { suggestionsFromMessages } from '../lib/platformEmbed.js'
+import {
+  hasPendingAssistantReply,
+  suggestionsFromMessages,
+} from '../lib/platformEmbed.js'
 
 const SERVICES_URL = bubbleAppUrl('/marketplace/services')
 
@@ -352,6 +355,49 @@ function ChatPanel({
         )
         if (conversation.draft) setDraft(conversation.draft)
         setStatus(conversation.status === 'completed' ? 'done' : 'chatting')
+        if (conversation.status !== 'completed' && hasPendingAssistantReply(restoredMessages)) {
+          setStatus('thinking')
+          try {
+            const { reply, readyToDraft, suggestions: next } = await sendChat(restoredMessages, {
+              skipOrgProfile,
+              drafterSource,
+            })
+            if (!live) return
+            const replySuggestions = Array.isArray(next) ? next.slice(0, 4) : []
+            const withReply = [
+              ...restoredMessages,
+              { role: 'bot', text: reply, suggestions: replySuggestions },
+            ]
+            setMessages(withReply)
+            const saved = await savePlatformConversation({
+              u: existingUserId,
+              p: existingProjectId,
+              messages: withReply,
+              funnelSessionId: getConversationSessionId(),
+            })
+            if (!live) return
+            if (readyToDraft) {
+              const draftSynced = await buildDraft(withReply)
+              if (!draftSynced) await attachSavedPlatformConversation(saved)
+            } else {
+              setSuggestions(replySuggestions)
+              setStatus('chatting')
+              await attachSavedPlatformConversation(saved)
+            }
+          } catch (resumeError) {
+            if (!live) return
+            setStatus('error')
+            setMessages([
+              ...restoredMessages,
+              { role: 'bot', text: `The saved message is ready, but the AI could not reply yet (${resumeError.message}). Please try sending it again.` },
+            ])
+            await attachSavedPlatformConversation({
+              id: conversation.id,
+              bubble_sync_status: conversation.bubble_sync_status,
+            })
+          }
+          return
+        }
         if (conversation.status !== 'completed' && conversation.bubble_sync_status !== 'synced') {
           try {
             await attachPlatformConversation({

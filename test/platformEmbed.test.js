@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   conversationIdFromParams,
+  hasPendingAssistantReply,
   suggestionsFromMessages,
 } from '../src/lib/platformEmbed.js'
 
@@ -47,4 +48,13 @@ test('restores quick-reply suggestions from the latest assistant message', () =>
 
 test('returns no suggestions for legacy messages without saved quick replies', () => {
   assert.deepEqual(suggestionsFromMessages([{ role: 'bot', text: 'Legacy reply' }]), [])
+})
+
+test('identifies a saved user turn that still needs an assistant reply', () => {
+  assert.equal(hasPendingAssistantReply([{ role: 'user', text: 'Unanswered' }]), true)
+  assert.equal(hasPendingAssistantReply([
+    { role: 'user', text: 'Answered' },
+    { role: 'bot', text: 'Response' },
+  ]), false)
+  assert.equal(hasPendingAssistantReply([]), false)
 })
