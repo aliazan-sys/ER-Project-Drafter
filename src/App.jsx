@@ -8,6 +8,7 @@ import BubbleDraftPage from './components/BubbleDraftPage.jsx'
 import FunnelPage from './components/FunnelPage.jsx'
 import AiDrafterPage from './components/AiDrafterPage.jsx'
 import { AdminGate, AdminLayout } from './components/AdminAccess.jsx'
+import { conversationIdFromParams } from './lib/platformEmbed.js'
 
 // Tiny hash router so each experience has a shareable link:
 //   #/ or #/draft → Website Project Drafter
@@ -140,7 +141,7 @@ export default function App() {
   if (EMBED_PLATFORM) {
     const existingUserId = (params.get('u') || '').trim()
     const existingProjectId = (params.get('p') || '').trim()
-    const conversationId = (params.get('conversation') || '').trim()
+    const conversationId = conversationIdFromParams(params)
     return (
       <div className="app wide bubble-drafter">
         <PlatformDraftPage
