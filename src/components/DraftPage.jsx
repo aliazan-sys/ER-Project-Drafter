@@ -13,6 +13,7 @@ import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
 import { bubbleAppUrl } from '../lib/bubbleConfig.js'
+import { suggestionsFromMessages } from '../lib/platformEmbed.js'
 
 const SERVICES_URL = bubbleAppUrl('/marketplace/services')
 
@@ -258,7 +259,8 @@ function ChatPanel({
         skipOrgProfile,
         drafterSource,
       })
-      const withReply = [...convo, { role: 'bot', text: reply }]
+      const replySuggestions = Array.isArray(next) ? next.slice(0, 4) : []
+      const withReply = [...convo, { role: 'bot', text: reply, suggestions: replySuggestions }]
       setMessages(withReply)
       if (isPlatformEmbed) {
         await savePlatformConversation({
@@ -272,7 +274,7 @@ function ChatPanel({
       if (readyToDraft) {
         await buildDraft(withReply)
       } else {
-        setSuggestions(Array.isArray(next) ? next.slice(0, 4) : [])
+        setSuggestions(replySuggestions)
         setStatus('chatting')
       }
     } catch (err) {
@@ -333,7 +335,11 @@ function ChatPanel({
     })
       .then(async (conversation) => {
         if (!live || !conversation) return
-        setMessages(Array.isArray(conversation.messages) ? conversation.messages : [])
+        const restoredMessages = Array.isArray(conversation.messages) ? conversation.messages : []
+        setMessages(restoredMessages)
+        setSuggestions(
+          conversation.status === 'completed' ? [] : suggestionsFromMessages(restoredMessages),
+        )
         if (conversation.draft) setDraft(conversation.draft)
         setStatus(conversation.status === 'completed' ? 'done' : 'chatting')
         if (conversation.status !== 'completed' && conversation.bubble_sync_status !== 'synced') {

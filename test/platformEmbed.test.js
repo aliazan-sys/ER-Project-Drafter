@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { conversationIdFromParams } from '../src/lib/platformEmbed.js'
+import {
+  conversationIdFromParams,
+  suggestionsFromMessages,
+} from '../src/lib/platformEmbed.js'
 
 test('reads the canonical conversation URL parameter', () => {
   assert.equal(
@@ -25,4 +28,23 @@ test('prefers conversation and falls back to conversation_id when blank', () => 
     conversationIdFromParams(new URLSearchParams('conversation=%20&conversation_id=second')),
     'second',
   )
+})
+
+test('restores quick-reply suggestions from the latest assistant message', () => {
+  assert.deepEqual(
+    suggestionsFromMessages([
+      { role: 'bot', text: 'Earlier question', suggestions: ['Earlier'] },
+      { role: 'user', text: 'My answer' },
+      {
+        role: 'bot',
+        text: 'Follow-up question',
+        suggestions: [' Option A ', 'Option B', 'Option A', null, 'Option C', 'Option D', 'Option E'],
+      },
+    ]),
+    ['Option A', 'Option B', 'Option C', 'Option D'],
+  )
+})
+
+test('returns no suggestions for legacy messages without saved quick replies', () => {
+  assert.deepEqual(suggestionsFromMessages([{ role: 'bot', text: 'Legacy reply' }]), [])
 })
