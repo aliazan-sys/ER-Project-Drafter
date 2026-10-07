@@ -101,6 +101,7 @@ function ChatPanel({
   const [refining, setRefining] = useState(false)
   // Tappable answers to the question the assistant just asked.
   const [suggestions, setSuggestions] = useState([])
+  const [projectNavigationUrl, setProjectNavigationUrl] = useState('')
   const scrollRef = useRef(null)
   const initialPromptSentRef = useRef(false)
   const aiDrafterTokenRef = useRef('')
@@ -212,6 +213,7 @@ function ChatPanel({
 
   function navigateToBubbleProject() {
     const url = bubbleAppUrl(`/client/project-request/${encodeURIComponent(existingProjectId)}`)
+    setProjectNavigationUrl(url)
     if (window.self === window.top) {
       window.location.assign(url)
       return
@@ -546,7 +548,12 @@ function ChatPanel({
             )}
 
             {isPlatformEmbed && status === 'done' ? (
-              <p className="composer-hint">This conversation is complete and available for review only.</p>
+              <p className="composer-hint">
+                This conversation is complete and available for review only.
+                {projectNavigationUrl && (
+                  <> <a href={projectNavigationUrl} target="_top">Open your project</a></>
+                )}
+              </p>
             ) : (
             <form onSubmit={handleSend} className="composer-inner composer-pill">
               <textarea
