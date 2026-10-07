@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  callBubbleDraftWorkflow,
   normalizeBubbleId,
   ownershipResponseAuthorized,
   verifyProjectOwnership,
@@ -32,9 +33,36 @@ test('sends Bubble ownership workflow parameter names user_id and project_id', a
   }
   try {
     assert.equal(await verifyProjectOwnership(' user-123 ', ' project-456 '), false)
-    assert.match(request.url, /project_ownership_verification$/)
+    assert.equal(request.url, 'https://admin-83903.bubbleapps.io/api/1.1/wf/project_ownership_verification')
     assert.deepEqual(request.body, { user_id: 'user-123', project_id: 'project-456' })
   } finally {
     globalThis.fetch = originalFetch
+  }
+})
+
+test('keeps server-side workflow calls on live by default and supports explicit development', async () => {
+  const originalFetch = globalThis.fetch
+  const originalEnvironment = process.env.VITE_BUBBLE_APP_ENV
+  let requestUrl = ''
+  globalThis.fetch = async (url) => {
+    requestUrl = url
+    return { ok: true, json: async () => ({ status: 'success' }) }
+  }
+
+  try {
+    delete process.env.VITE_BUBBLE_APP_ENV
+    await callBubbleDraftWorkflow({ u: 'user-123', p: 'project-456' })
+    assert.equal(requestUrl, 'https://admin-83903.bubbleapps.io/api/1.1/wf/webhook-draft-project_internal')
+
+    process.env.VITE_BUBBLE_APP_ENV = 'development'
+    await verifyProjectOwnership('user-123', 'project-456')
+    assert.equal(
+      requestUrl,
+      'https://admin-83903.bubbleapps.io/version-83k77/api/1.1/wf/project_ownership_verification',
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalEnvironment === undefined) delete process.env.VITE_BUBBLE_APP_ENV
+    else process.env.VITE_BUBBLE_APP_ENV = originalEnvironment
   }
 })

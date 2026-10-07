@@ -1,7 +1,4 @@
-const WORKFLOW_BASES = {
-  live: 'https://admin-83903.bubbleapps.io/api/1.1/wf',
-  development: 'https://admin-83903.bubbleapps.io/version-83k77/api/1.1/wf',
-}
+import { resolveBubbleWorkflowBaseUrl } from '../src/lib/bubbleConfig.js'
 
 const MAX_BUBBLE_ID_LENGTH = 255
 
@@ -15,8 +12,8 @@ export function ownershipResponseAuthorized(value) {
 }
 
 export async function callBubbleDraftWorkflow(payload) {
-  const environment = process.env.VITE_BUBBLE_APP_ENV || 'development'
-  const baseUrl = WORKFLOW_BASES[environment] || WORKFLOW_BASES.development
+  const environment = process.env.VITE_BUBBLE_APP_ENV || 'live'
+  const baseUrl = resolveBubbleWorkflowBaseUrl(environment)
   const res = await fetch(`${baseUrl}/webhook-draft-project_internal`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -38,8 +35,8 @@ export async function verifyProjectOwnership(userIdValue, projectIdValue) {
   const projectId = normalizeBubbleId(projectIdValue)
   if (!userId || !projectId) return false
 
-  const environment = process.env.VITE_BUBBLE_APP_ENV || 'development'
-  const baseUrl = WORKFLOW_BASES[environment] || WORKFLOW_BASES.development
+  const environment = process.env.VITE_BUBBLE_APP_ENV || 'live'
+  const baseUrl = resolveBubbleWorkflowBaseUrl(environment)
   const res = await fetch(`${baseUrl}/project_ownership_verification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -10,8 +10,8 @@ import {
   resolveBubbleWorkflowBaseUrl,
 } from '../src/lib/bubbleConfig.js'
 
-test('defaults builds to the current development Bubble environment', () => {
-  assert.equal(BUBBLE_APP_ENV, 'development')
+test('defaults builds to the live Bubble environment', () => {
+  assert.equal(BUBBLE_APP_ENV, 'live')
 })
 
 test('resolves live and development Bubble app branches', () => {

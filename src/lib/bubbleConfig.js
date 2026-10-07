@@ -16,10 +16,9 @@ export function resolveBubbleWorkflowBaseUrl(environment = 'live') {
   return BUBBLE_WORKFLOW_ENVIRONMENTS[environment] || BUBBLE_WORKFLOW_ENVIRONMENTS.live
 }
 
-// Vite reads this at build time. Development is the temporary checked-in
-// default so the production drafter targets the active Bubble branch until
-// VITE_BUBBLE_APP_ENV is explicitly switched back to "live".
-export const BUBBLE_APP_ENV = import.meta.env?.VITE_BUBBLE_APP_ENV || 'development'
+// Vite reads this at build time. Live is the default; set VITE_BUBBLE_APP_ENV
+// to "development" only when intentionally targeting the Bubble branch.
+export const BUBBLE_APP_ENV = import.meta.env?.VITE_BUBBLE_APP_ENV || 'live'
 export const BUBBLE_APP_BASE_URL = resolveBubbleAppBaseUrl(BUBBLE_APP_ENV)
 export const BUBBLE_WORKFLOW_BASE_URL = resolveBubbleWorkflowBaseUrl(BUBBLE_APP_ENV)
 
