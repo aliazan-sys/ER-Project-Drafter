@@ -16,6 +16,7 @@ import {
   SIGNUP_DUPLICATE,
 } from '../lib/api.js'
 import { trackStage } from '../lib/tracking.js'
+import { checkPassword, isPasswordValid } from '../lib/passwordPolicy.js'
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
 import { currencyForLocation } from '../../shared/locationCurrency.js'
@@ -626,7 +627,19 @@ export default function ProjectDraftModal({
 }
 
 // --- Email capture + submit to the EqualReach web app ---------------------
-const MIN_PASSWORD = 8
+function PasswordRules({ password }) {
+  const rules = checkPassword(password)
+  return (
+    <p className="pw-rules" id="signup-password-rules">
+      {rules.map((rule, i) => (
+        <span key={rule.key}>
+          <span className={rule.met ? 'pw-rule met' : 'pw-rule'}>{rule.label}</span>
+          {i < rules.length - 2 ? ', ' : i === rules.length - 2 ? ', and ' : '.'}
+        </span>
+      ))}
+    </p>
+  )
+}
 
 function SignupModal({ draft, drafterSource, onClose, onLogin }) {
   const [email, setEmail] = useState('')
@@ -647,7 +660,7 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
   const emailValid =/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
   // Not trimmed: leading/trailing spaces are legitimate password characters,
   // and silently stripping them would break the login they just set up.
-  const passwordValid = password.length >= MIN_PASSWORD
+  const passwordValid = isPasswordValid(password)
   const submittingAs = String(draft?.orgProfile?.submittingAs || '').trim().toLowerCase()
   const organizationType = String(draft?.orgProfile?.type || '').trim()
   const isBusinessSignup =
@@ -823,7 +836,7 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
                 // so browsers should offer to generate and save rather than
                 // autofill an existing credential.
                 autoComplete="new-password"
-                minLength={MIN_PASSWORD}
+                aria-describedby="signup-password-rules"
                 required
                 disabled={status === 'submitting'}
               />
@@ -838,6 +851,7 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
                 {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
+            <PasswordRules password={password} />
             {status === 'error' && <p className="signup-error">⚠️ {error}</p>}
 
             <label className="signup-news-optin" htmlFor="signup-receive-news">

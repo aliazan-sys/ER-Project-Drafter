@@ -1874,6 +1874,16 @@ body {
   cursor: not-allowed;
 }
 
+.pw-rules {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.pw-rule.met {
+  color: #16a34a;
+}
+
 .signup-fine {
   color: var(--ink-soft);
   font-size: 13px;
