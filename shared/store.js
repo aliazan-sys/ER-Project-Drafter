@@ -273,6 +273,8 @@ function ensureFunnelSchema() {
         ALTER TABLE funnel_sessions
           ADD COLUMN IF NOT EXISTS environment text NOT NULL DEFAULT 'development';
         ALTER TABLE funnel_sessions
+          ADD COLUMN IF NOT EXISTS completion_email text;
+        ALTER TABLE funnel_sessions
           ADD COLUMN IF NOT EXISTS acquisition_source text,
           ADD COLUMN IF NOT EXISTS utm_source text,
           ADD COLUMN IF NOT EXISTS utm_medium text,
@@ -314,7 +316,7 @@ function ensureFunnelSchema() {
 //
 // Best-effort like everything else here: a tracking failure is logged and
 // swallowed, never surfaced to the user.
-export async function recordStage({ sessionId, stage, mode, visitorId, attribution }) {
+export async function recordStage({ sessionId, stage, mode, visitorId, attribution, completionEmail }) {
   if (!isConfigured() || !sessionId || !isFunnelStage(stage)) return false
   // Localhost and preview deploys write nothing at all, so the table holds
   // only real traffic — not just the summary.
@@ -324,13 +326,13 @@ export async function recordStage({ sessionId, stage, mode, visitorId, attributi
     const source = normalizeAttribution(attribution)
     await pool().query(
       `INSERT INTO funnel_sessions (
-         session_id, visitor_id, mode, stage, stage_rank, completed_at, environment,
+         session_id, visitor_id, mode, stage, stage_rank, completed_at, environment, completion_email,
          acquisition_source, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
          referrer_host, landing_path, gclid, fbclid, msclkid
        )
        VALUES (
-         $1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END, $6,
-         $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+         $1, $2, $3, $4, $5, CASE WHEN $4 = 'completed' THEN now() END, $6, $7,
+         $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
        )
        ON CONFLICT (session_id) DO UPDATE SET
          stage = CASE WHEN EXCLUDED.stage_rank > funnel_sessions.stage_rank
@@ -352,6 +354,7 @@ export async function recordStage({ sessionId, stage, mode, visitorId, attributi
          fbclid = COALESCE(funnel_sessions.fbclid, EXCLUDED.fbclid),
          msclkid = COALESCE(funnel_sessions.msclkid, EXCLUDED.msclkid),
          completed_at = COALESCE(funnel_sessions.completed_at, EXCLUDED.completed_at),
+         completion_email = COALESCE(funnel_sessions.completion_email, EXCLUDED.completion_email),
          updated_at = now()`,
       [
         sessionId,
@@ -360,6 +363,10 @@ export async function recordStage({ sessionId, stage, mode, visitorId, attributi
         stage,
         stageRank(stage),
         currentEnvironment(),
+        stage === 'completed' && typeof completionEmail === 'string' &&
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(completionEmail.trim())
+          ? completionEmail.trim().slice(0, 320).toLowerCase()
+          : null,
         source.acquisitionSource,
         source.utmSource,
         source.utmMedium,

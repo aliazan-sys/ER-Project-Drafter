@@ -644,19 +644,24 @@ export function submitDraftSignup(
     keepalive: new Blob([body]).size <= KEEPALIVE_MAX_BYTES,
   })
     .then(async (res) => {
-      if (res.ok) return SIGNUP_PROCEED
+      if (res.ok) return { outcome: SIGNUP_PROCEED, accepted: true }
       const data = await res.json().catch(() => ({}))
-      return isDuplicateEmail(data) ? SIGNUP_DUPLICATE : SIGNUP_PROCEED
+      return isDuplicateEmail(data)
+        ? { outcome: SIGNUP_DUPLICATE, accepted: false }
+        : { outcome: SIGNUP_PROCEED, accepted: false }
     })
-    .catch(() => SIGNUP_PROCEED)
+    .catch(() => ({ outcome: SIGNUP_PROCEED, accepted: false }))
 
   // Race rather than abort: letting the timer win stops us WAITING, but the
   // request keeps running so a slow workflow still creates the account.
-  const outcome = Promise.race([request, after(DUPLICATE_CHECK_TIMEOUT_MS, SIGNUP_PROCEED)])
+  const outcome = Promise.race([
+    request,
+    after(DUPLICATE_CHECK_TIMEOUT_MS, { outcome: SIGNUP_PROCEED, accepted: false }),
+  ])
 
   // The token is still sent to the workflow in the payload, but the caller has
   // no use for it now that the redirect carries no query string.
-  return { outcome }
+  return { outcome, submission: request.then((result) => result.accepted) }
 }
 
 // Existing users submit the same normalized payload as sign-up, but to the

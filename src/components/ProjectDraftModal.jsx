@@ -678,16 +678,12 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
     if (!valid || status === 'submitting') return
     setStatus('submitting')
     setError('')
-    // The funnel's finish line is pressing this button with a valid form —
-    // reported here, before the await, because what follows ends in a redirect
-    // away from the page and may resolve only after we have already left.
-    trackStage('completed')
     try {
       // The payload goes out immediately; the only thing we wait on is the
       // duplicate-email verdict, which decides where they land. Anything else
       // — slow workflow, network error — resolves to "proceed" (see
       // submitDraftSignup), so this never blocks for longer than that check.
-      const { outcome } = submitDraftSignup(
+      const { outcome, submission } = submitDraftSignup(
         email.trim(),
         draft,
         {
@@ -699,7 +695,10 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
         },
         { drafterSource },
       )
-      const verdict = await outcome
+      const { outcome: verdict } = await outcome
+      void submission.then((accepted) => {
+        if (accepted) trackStage('completed', { email: email.trim() })
+      })
       // Show "You're all set!" before logging in, so the success screen covers
       // that second round-trip instead of the button sitting on "Submitting…".
       setStatus('done')
@@ -1427,7 +1426,7 @@ function LoginModal({ draft, drafterSource, onClose, onSignup }) {
         console.warn('[login] project payload submission failed:', err)
       })
       const url = await loginRequest
-      trackStage('completed')
+      trackStage('completed', { email: email.trim() })
 
       if (window.self !== window.top) {
         try {

@@ -68,7 +68,7 @@ export function getConversationSessionId() {
 // is being tracked — which is what makes it safe to call from the draft wizard,
 // since that same wizard also opens from the history page, where there is no
 // live conversation to attribute the stage to.
-export function trackStage(stage) {
+export function trackStage(stage, { email } = {}) {
   const sessionId = read(SESSION_KEY, 'session')
   if (!sessionId) return
 
@@ -78,6 +78,7 @@ export function trackStage(stage) {
     stage,
     mode: read(MODE_KEY, 'mode'),
     attribution,
+    ...(stage === 'completed' && email ? { completionEmail: email } : {}),
   })
   try {
     fetch('/api/track', {
