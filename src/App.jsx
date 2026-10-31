@@ -6,6 +6,7 @@ import DraftPage from './components/DraftPage.jsx'
 import PlatformDraftPage from './components/PlatformDraftPage.jsx'
 import BubbleDraftPage from './components/BubbleDraftPage.jsx'
 import FunnelPage from './components/FunnelPage.jsx'
+import ProjectFunnelsPage from './components/ProjectFunnelsPage.jsx'
 import AiDrafterPage from './components/AiDrafterPage.jsx'
 import { AdminGate, AdminLayout } from './components/AdminAccess.jsx'
 import { conversationIdFromParams } from './lib/platformEmbed.js'
@@ -23,6 +24,7 @@ function routeFromHash() {
   if (r === 'admin') return 'admin'
   if (r === 'history') return 'history'
   if (r === 'funnel') return 'funnel'
+  if (r === 'project-funnels') return 'project-funnels'
   return 'draft'
 }
 
@@ -192,6 +194,7 @@ export default function App() {
         <AdminLayout route={route} user={adminSession.user} onLogout={signOutAdmin}>
           {(route === 'admin' || route === 'history') && <HistoryPage key="history" />}
           {route === 'funnel' && <FunnelPage key="funnel" />}
+          {route === 'project-funnels' && <ProjectFunnelsPage key="project-funnels" />}
         </AdminLayout>
       </AdminGate>
     </div>

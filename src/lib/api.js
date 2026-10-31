@@ -173,6 +173,13 @@ export async function getFunnelSummary() {
   }
 }
 
+export async function listProjectFunnels() {
+  const res = await fetch('/api/project-funnels', { credentials: 'same-origin' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  return data.projects || []
+}
+
 export async function getMarketplaceSuggestions(query) {
   const res = await fetch(`/api/marketplace-suggestions?q=${encodeURIComponent(query)}`)
   const data = await res.json().catch(() => ({}))

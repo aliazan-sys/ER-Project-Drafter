@@ -1034,6 +1034,43 @@ body {
   padding: 22px;
 }
 
+.project-funnels-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  overflow: auto;
+}
+
+.project-funnel-card {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.project-funnel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.project-funnel-heading h2 { margin: 0; font-size: 16px; }
+.project-funnel-heading p { margin: 5px 0 0; color: var(--ink-soft); font-size: 12px; }
+.project-funnel-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
+.project-funnel-step { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 12px; }
+.project-funnel-dot { display: grid; flex: 0 0 24px; width: 24px; height: 24px; place-items: center; border: 1px solid var(--line); border-radius: 50%; font-size: 11px; }
+.project-funnel-step.reached { color: var(--teal-dark); }
+.project-funnel-step.reached .project-funnel-dot { border-color: var(--teal-dark); background: rgba(21, 151, 165, 0.12); }
+.project-funnel-step.current { font-weight: 700; }
+.project-funnel-status { margin: 12px 0 0; font-size: 12px; color: var(--ink-soft); }
+
+@media (max-width: 600px) {
+  .project-funnel-steps { grid-template-columns: 1fr 1fr; }
+  .project-funnel-heading { flex-direction: column; }
+}
+
 .funnel-source-tabs {
   display: flex;
   gap: 8px;

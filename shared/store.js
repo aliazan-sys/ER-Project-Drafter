@@ -424,6 +424,28 @@ export async function funnelSummary() {
   }
 }
 
+// Per-saved-draft funnel progress. Drafts link to their originating session
+// through conversations.funnel_session_id; sessions without saved drafts are
+// intentionally excluded from this project-level view.
+export async function listProjectFunnels() {
+  if (!isConfigured()) return []
+  await Promise.all([ensureSchema(), ensureFunnelSchema()])
+  const { rows } = await pool().query(`
+    SELECT c.id, c.mode, c.created_at, d.title,
+           fs.stage AS funnel_stage, fs.completion_email, fs.started_at AS funnel_started_at,
+           fs.updated_at AS funnel_updated_at,
+           (fs.session_id IS NOT NULL) AS funnel_tracked
+    FROM conversations c
+    INNER JOIN drafts d ON d.conversation_id = c.id
+    LEFT JOIN funnel_sessions fs
+      ON fs.session_id = c.funnel_session_id
+     AND fs.environment = 'production'
+    ORDER BY c.created_at DESC
+    LIMIT 500
+  `)
+  return rows
+}
+
 // Saves a conversation and its generated draft. Returns the new conversation id,
 // or null when storage isn't configured. Never throws — persistence is
 // best-effort and must not break draft generation.

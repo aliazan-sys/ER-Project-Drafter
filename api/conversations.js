@@ -1,7 +1,7 @@
 // Vercel serverless function — GET /api/conversations
 //   GET /api/conversations          → list of saved conversations (summaries)
 //   GET /api/conversations?id=<id>  → one conversation's transcript + draft
-import { listConversations, getConversation } from '../shared/store.js'
+import { listConversations, getConversation, listProjectFunnels } from '../shared/store.js'
 import { requireAdmin } from '../shared/adminAuth.js'
 
 export default async function handler(req, res) {
@@ -18,6 +18,9 @@ export default async function handler(req, res) {
       const row = await getConversation(id)
       if (!row) return res.status(404).json({ error: 'Not found' })
       return res.status(200).json({ conversation: row })
+    }
+    if (req.query?.view === 'project-funnels') {
+      return res.status(200).json({ projects: await listProjectFunnels() })
     }
     return res.status(200).json({ conversations: await listConversations() })
   } catch (err) {

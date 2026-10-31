@@ -100,6 +100,12 @@ export function AdminLayout({ route, user, onLogout, children }) {
             </svg>
             Funnel
           </a>
+          <a href="#/project-funnels" className={route === 'project-funnels' ? 'active' : ''}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16M6 10h12M8 15h8M10 20h4" />
+            </svg>
+            Project Funnels
+          </a>
         </nav>
 
         <div className="admin-sidebar-footer">

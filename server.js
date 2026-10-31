@@ -29,6 +29,7 @@ import {
   getConversation,
   recordStage,
   funnelSummary,
+  listProjectFunnels,
 } from './shared/store.js'
 import {
   callBubbleDraftWorkflow,
@@ -313,6 +314,14 @@ app.get('/api/funnel', requireLocalAdmin, async (_req, res) => {
   const summary = await funnelSummary()
   if (!summary) return res.status(503).json({ error: 'Tracking storage is not configured.' })
   res.json({ summary })
+})
+
+app.get('/api/project-funnels', requireLocalAdmin, async (_req, res) => {
+  try {
+    res.json({ projects: await listProjectFunnels() })
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load project funnel data.', detail: String(err) })
+  }
 })
 
 // History: list all saved conversations, or fetch one (with transcript + draft).
