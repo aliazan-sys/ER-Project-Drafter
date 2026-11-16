@@ -353,6 +353,20 @@ export function generateDrafterToken() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+// Client account type for Bubble: "individual" or "organization" (lowercase). Mirrors the
+// signup form's own rule (ProjectDraftModal's isBusinessSignup). '' when the
+// draft carries no profile at all (existing Bubble users), so we never guess.
+export function deriveClientType(orgProfile) {
+  const p = orgProfile || {}
+  const submittingAs = String(p.submittingAs || '').trim().toLowerCase()
+  const type = String(p.type || '').trim()
+  if (['organisation', 'organization', 'business'].includes(submittingAs)) return 'organization'
+  if (submittingAs === 'individual') return 'individual'
+  if (type === 'Solo Business') return 'individual'
+  if (type) return 'organization'
+  return ''
+}
+
 // Coerce the editable form draft into the shape/types the Bubble workflow wants
 // (nested), so Option Sets, Date and number params line up.
 export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToken = '') {
@@ -381,6 +395,7 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     // is constant here. It exists so the web app can tell these apart from
     // projects a user typed in by hand.
     created_by_ai: true,
+    clientType: deriveClientType(profile),
     organizationName: contact.organizationName || '',
     firstName: contact.firstName || '',
     lastName: contact.lastName || '',

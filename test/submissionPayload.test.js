@@ -13,6 +13,15 @@ test('sends news consent as a Bubble-compatible Yes/No boolean', () => {
   assert.equal(typeof optedIn.receiveNews, 'boolean')
 })
 
+test('sends the client account type', () => {
+  const build = (orgProfile) => buildSubmissionPayload('a@b.co', { orgProfile }, {}).clientType
+  assert.equal(build({ submittingAs: 'Individual', type: 'Solo Business' }), 'individual')
+  assert.equal(build({ submittingAs: 'Organisation', name: 'Acme', type: '' }), 'organization')
+  assert.equal(build({ type: 'Startup' }), 'organization')
+  assert.equal(build({ type: 'Solo Business' }), 'individual')
+  assert.equal(build({}), '')
+})
+
 test('sends the existing Bubble project and conversation references', () => {
   const payload = buildSubmissionPayload('', {}, {
     userId: 'user-123',
