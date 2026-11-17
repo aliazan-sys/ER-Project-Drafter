@@ -186,10 +186,16 @@ function ChatPanel({
       ])
       if (isPlatformEmbed) {
         try {
+          // Syncing links the conversation to the Bubble project, and Bubble
+          // reacts by reloading this iframe with ?conversation_id=…, which can
+          // kill this page before it navigates. Leave a note so the reloaded
+          // page finishes the redirect (see the restore effect).
+          markPendingProjectRedirect(true)
           await syncPlatformDraft(result, id)
           navigateToBubbleProject()
           return true
         } catch (syncError) {
+          markPendingProjectRedirect(false)
           setMessages((m) => [
             ...m,
             {
@@ -211,7 +217,33 @@ function ChatPanel({
     }
   }
 
+  // sessionStorage survives the iframe reload; a failure just means no resume.
+  function pendingRedirectKey() {
+    return `er_pending_project_redirect:${existingProjectId}`
+  }
+
+  function markPendingProjectRedirect(pending) {
+    try {
+      if (pending) sessionStorage.setItem(pendingRedirectKey(), String(Date.now()))
+      else sessionStorage.removeItem(pendingRedirectKey())
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  function takePendingProjectRedirect() {
+    try {
+      const raw = sessionStorage.getItem(pendingRedirectKey())
+      sessionStorage.removeItem(pendingRedirectKey())
+      // Only honour a fresh note, so reopening an old conversation never redirects.
+      return Boolean(raw) && Date.now() - Number(raw) < 2 * 60 * 1000
+    } catch {
+      return false
+    }
+  }
+
   function navigateToBubbleProject() {
+    markPendingProjectRedirect(false)
     const url = bubbleProjectRequestUrl(existingProjectId)
     setProjectNavigationUrl(url)
     if (window.self === window.top) {
@@ -414,13 +446,15 @@ function ChatPanel({
               { role: 'bot', text: `Your conversation is saved, but Bubble could not link it to this project yet (${syncError.message}). It will retry next time you open the drafter.` },
             ])
           }
-        } else if (
-          conversation.status === 'completed' &&
-          conversation.draft &&
-          conversation.bubble_sync_status !== 'synced'
-        ) {
+        } else if (conversation.status === 'completed' && conversation.draft) {
+          // This page was reloaded mid-redirect (Bubble re-renders the iframe
+          // with the new conversation_id): finish the navigation.
+          const resumeRedirect = takePendingProjectRedirect()
           try {
-            await syncPlatformDraft(conversation.draft, conversation.id)
+            if (conversation.bubble_sync_status !== 'synced') {
+              await syncPlatformDraft(conversation.draft, conversation.id)
+            }
+            if (resumeRedirect && live) navigateToBubbleProject()
           } catch (syncError) {
             setMessages((items) => [
               ...items,
