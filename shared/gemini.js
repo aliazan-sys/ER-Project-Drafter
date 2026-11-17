@@ -475,6 +475,48 @@ const toContents = (messages) =>
       parts: [{ text: m.text }],
     }))
 
+const PROFILE_QUESTION = 'Are you submitting as an individual or on behalf of an organisation?'
+const INDIVIDUAL_LOCATION_QUESTION = 'Where are you based?'
+const ORGANISATION_QUESTION = 'What is your organisation’s name, and where is it based?'
+const isProfileQuestion = (text) =>
+  /individual or on behalf of an organi[sz]ation/i.test(String(text || ''))
+const isUserMessage = (m) => m?.role === 'user' && typeof m.text === 'string'
+const isBotMessage = (m) => m && m.role !== 'user' && typeof m.text === 'string'
+
+// The website drafter must always ask whether the user is an Individual or an
+// Organisation (and the one follow-up) before drafting. That rule lives in the
+// model's instructions, which it occasionally skips, so it is enforced here
+// too: if the model says "ready to draft" before the profile branch is
+// complete, replace its reply with the missing question instead.
+export function enforceProfileQuestion(
+  messages,
+  result,
+  { skipOrgProfile = false } = {},
+) {
+  if (skipOrgProfile || !result?.readyToDraft) return result
+  const list = Array.isArray(messages) ? messages : []
+
+  let askedAt = -1
+  list.forEach((m, i) => { if (isBotMessage(m) && isProfileQuestion(m.text)) askedAt = i })
+  const afterQuestion = askedAt < 0 ? [] : list.slice(askedAt + 1)
+  const answerAt = afterQuestion.findIndex(isUserMessage)
+
+  if (askedAt < 0 || answerAt < 0) {
+    return { ...result, reply: PROFILE_QUESTION, readyToDraft: false, suggestions: ['Individual', 'Organisation'] }
+  }
+
+  // The branch's single follow-up (location, or organisation name + location).
+  if (afterQuestion.slice(answerAt + 1).some(isBotMessage)) return result
+  const answer = afterQuestion[answerAt].text
+  if (/\b(individual|solo)\b/i.test(answer)) {
+    return { ...result, reply: INDIVIDUAL_LOCATION_QUESTION, readyToDraft: false, suggestions: [] }
+  }
+  if (/organi[sz]ation/i.test(answer)) {
+    return { ...result, reply: ORGANISATION_QUESTION, readyToDraft: false, suggestions: [] }
+  }
+  return result
+}
+
 // One conversational turn. `messages` is the full transcript so far (ending with
 // the user's latest message). Returns { reply, readyToDraft }.
 export async function chatReply(
@@ -484,12 +526,13 @@ export async function chatReply(
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new GeminiError(400, 'Missing "messages" in request body.')
   }
-  const result = await callModel({
+  const modelResult = await callModel({
     systemText: buildChatSystemInstruction(today(), { skipOrgProfile, drafterSource }),
     contents: toContents(messages),
     schema: chatResponseSchema,
     temperature: 0.1,
   })
+  const result = enforceProfileQuestion(messages, modelResult, { skipOrgProfile })
 
   // Model instructions are not a sufficient enforcement boundary. If a reply
   // asks for an organisation's name or location, ensure the UI receives no
