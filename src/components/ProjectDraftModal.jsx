@@ -870,7 +870,7 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
             >
               <option value="">Choose an option…</option>
               {HEARD_ABOUT_OPTIONS.map((o) => (
-                <option key={o.display} value={o.display}>{o.display}</option>
+                <option key={o.value} value={o.value}>{o.display}</option>
               ))}
             </select>
             {heardAboutOption?.openText && (
