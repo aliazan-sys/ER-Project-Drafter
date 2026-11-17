@@ -33,3 +33,19 @@ test('sends the existing Bubble project and conversation references', () => {
   assert.equal(payload.conversation_id, 'conversation-789')
   assert.equal(Object.hasOwn(payload, 'email'), false)
 })
+test('sends how the user heard about EqualReach, only when answered', () => {
+  const answered = buildSubmissionPayload('a@b.co', {}, {
+    heardAboutUs: 'Social media',
+    heardAboutUsDetail: 'LinkedIn',
+  })
+  assert.equal(answered.heardAboutUs, 'Social media')
+  assert.equal(answered.heardAboutUsDetail, 'LinkedIn')
+
+  const noDetail = buildSubmissionPayload('a@b.co', {}, { heardAboutUs: 'AI recommendation' })
+  assert.equal(noDetail.heardAboutUs, 'AI recommendation')
+  assert.equal(noDetail.heardAboutUsDetail, '')
+
+  const existingUser = buildSubmissionPayload('', {}, { userId: 'u1' })
+  assert.equal(Object.hasOwn(existingUser, 'heardAboutUs'), false)
+  assert.equal(Object.hasOwn(existingUser, 'heardAboutUsDetail'), false)
+})

@@ -401,6 +401,14 @@ export function buildSubmissionPayload(email, draft, contact = {}, aiDrafterToke
     lastName: contact.lastName || '',
     // A JSON boolean lets Bubble initialize this parameter as a Yes/No field.
     receiveNews: contact.receiveNews === true,
+    // "How did you hear about EqualReach?" — only asked on the website signup,
+    // so existing-user submissions simply omit both fields.
+    ...(contact.heardAboutUs
+      ? {
+          heardAboutUs: contact.heardAboutUs,
+          heardAboutUsDetail: contact.heardAboutUsDetail || '',
+        }
+      : {}),
     // Sent top-level, deliberately NOT inside `draft`: drafts are persisted to
     // our own history store and echoed back to the browser, and a credential
     // must not ride along into either.

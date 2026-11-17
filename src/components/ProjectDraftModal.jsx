@@ -16,6 +16,7 @@ import {
   SIGNUP_DUPLICATE,
 } from '../lib/api.js'
 import { trackStage } from '../lib/tracking.js'
+import { HEARD_ABOUT_OPTIONS, findHeardAboutOption } from '../lib/heardAbout.js'
 import { checkPassword, isPasswordValid } from '../lib/passwordPolicy.js'
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CloseIcon, PencilIcon, FrameIcon, CalendarIcon, DollarIcon, CardIcon, CalculatorIcon, ClockIcon, TagIcon } from './Icons.jsx'
 import { TIMEZONES } from '../../shared/timezones.js'
@@ -649,8 +650,11 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [receiveNews, setReceiveNews] = useState(false)
+  const [heardAbout, setHeardAbout] = useState('')
+  const [heardAboutDetail, setHeardAboutDetail] = useState('')
   const [status, setStatus] = useState('idle') // idle | submitting | done | error
   const [error, setError] = useState('')
+  const heardAboutOption = findHeardAboutOption(heardAbout)
 
   // Reaching the signup form is its own funnel stage: everyone here has an
   // approved draft and is one form away from converting, so abandoning at this
@@ -692,6 +696,8 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
           organizationName: isBusinessSignup ? organizationName.trim() : '',
           password,
           receiveNews,
+          heardAboutUs: heardAbout,
+          heardAboutUsDetail: heardAboutOption?.openText ? heardAboutDetail.trim() : '',
         },
         { drafterSource },
       )
@@ -851,6 +857,37 @@ function SignupModal({ draft, drafterSource, onClose, onLogin }) {
               </button>
             </div>
             <PasswordRules password={password} />
+
+            <label className="flabel" htmlFor="signup-heard-about" style={{ marginTop: 18 }}>
+              How did you hear about EqualReach? <span className="opt">(optional)</span>
+            </label>
+            <select
+              id="signup-heard-about"
+              className="inp"
+              value={heardAbout}
+              onChange={(e) => { setHeardAbout(e.target.value); setHeardAboutDetail('') }}
+              disabled={status === 'submitting'}
+            >
+              <option value="">Choose an option…</option>
+              {HEARD_ABOUT_OPTIONS.map((o) => (
+                <option key={o.display} value={o.display}>{o.display}</option>
+              ))}
+            </select>
+            {heardAboutOption?.openText && (
+              <input
+                id="signup-heard-about-detail"
+                className="inp"
+                style={{ marginTop: 10 }}
+                type="text"
+                value={heardAboutDetail}
+                onChange={(e) => setHeardAboutDetail(e.target.value)}
+                placeholder={heardAboutOption.detailPlaceholder}
+                aria-label={`${heardAboutOption.display} details`}
+                maxLength={200}
+                disabled={status === 'submitting'}
+              />
+            )}
+
             {status === 'error' && <p className="signup-error">⚠️ {error}</p>}
 
             <label className="signup-news-optin" htmlFor="signup-receive-news">
