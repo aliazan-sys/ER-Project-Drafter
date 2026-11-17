@@ -39,3 +39,23 @@ test('allows drafting once the branch is complete, or for existing Bubble users'
   assert.equal(enforceProfileQuestion(done, ready), ready)
   assert.equal(enforceProfileQuestion([user('x')], ready, { skipOrgProfile: true }), ready)
 })
+
+test('does not loop: type volunteered up front and location already answered', () => {
+  const messages = [
+    user('Create a project. I’m submitting as an individual, delivered remotely.'),
+    bot('Where are you based?'),
+    user('Islamabad'),
+  ]
+  assert.equal(enforceProfileQuestion(messages, ready), ready)
+})
+
+test('never repeats a question it already forced', () => {
+  const forced = [user('A website for my shop'), bot(ASK), user('Individual'), bot('Where are you based?'), user('Islamabad')]
+  assert.equal(enforceProfileQuestion(forced, ready), ready)
+  const declined = [user('x'), bot(ASK), user('Organisation'), bot('What is your organisation’s name, and where is it based?'), user('Acme')]
+  assert.equal(enforceProfileQuestion(declined, ready), ready)
+})
+
+test('does not re-ask the profile question once any answer was given to it', () => {
+  assert.equal(enforceProfileQuestion([user('x'), bot(ASK), user('hmm not sure')], ready), ready)
+})

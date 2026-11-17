@@ -480,14 +480,37 @@ const INDIVIDUAL_LOCATION_QUESTION = 'Where are you based?'
 const ORGANISATION_QUESTION = 'What is your organisation’s name, and where is it based?'
 const isProfileQuestion = (text) =>
   /individual or on behalf of an organi[sz]ation/i.test(String(text || ''))
+// Any bot question about where they / their organisation are based.
+const isLocationQuestion = (text) =>
+  /\bbased\b|organi[sz]ation[’']?s name/i.test(String(text || ''))
 const isUserMessage = (m) => m?.role === 'user' && typeof m.text === 'string'
 const isBotMessage = (m) => m && m.role !== 'user' && typeof m.text === 'string'
 
-// The website drafter must always ask whether the user is an Individual or an
-// Organisation (and the one follow-up) before drafting. That rule lives in the
-// model's instructions, which it occasionally skips, so it is enforced here
-// too: if the model says "ready to draft" before the profile branch is
-// complete, replace its reply with the missing question instead.
+// What the user said about who they are submitting as: an answer to the profile
+// question, or something they stated outright ("I'm submitting as an individual").
+function submitterTypeFrom(text, answeringQuestion) {
+  const t = String(text || '')
+  const individual = /\bindividual\b|\bsolo\b/i
+  const organisation = /\borgani[sz]ation\b|\bon behalf of\b/i
+  if (answeringQuestion) {
+    if (individual.test(t)) return 'individual'
+    if (organisation.test(t)) return 'organisation'
+    return null
+  }
+  if (/\b(?:as|am|i['’]m)\s+(?:an?\s+)?(?:individual|solo business)\b/i.test(t)) return 'individual'
+  if (/\bon behalf of\s+(?:an?|my|our|the)\s+organi[sz]ation\b|\b(?:as|for)\s+(?:an?|my|our)\s+organi[sz]ation\b/i.test(t)) {
+    return 'organisation'
+  }
+  return null
+}
+
+// The website drafter must ask whether the user is an Individual or an
+// Organisation (plus one location/name follow-up) before drafting. That rule
+// lives in the model's instructions, which it occasionally skips, so it is
+// enforced here too: if the model says "ready to draft" before the profile
+// branch is done, replace its reply with the missing question. Every question
+// forced here is recognised as asked once the user replies, so this can never
+// ask the same thing twice.
 export function enforceProfileQuestion(
   messages,
   result,
@@ -496,23 +519,29 @@ export function enforceProfileQuestion(
   if (skipOrgProfile || !result?.readyToDraft) return result
   const list = Array.isArray(messages) ? messages : []
 
-  let askedAt = -1
-  list.forEach((m, i) => { if (isBotMessage(m) && isProfileQuestion(m.text)) askedAt = i })
-  const afterQuestion = askedAt < 0 ? [] : list.slice(askedAt + 1)
-  const answerAt = afterQuestion.findIndex(isUserMessage)
+  let type = null
+  let profileAnswered = false
+  let locationAsked = false
+  let locationAnswered = false
+  list.forEach((m, i) => {
+    if (isBotMessage(m)) {
+      if (isLocationQuestion(m.text)) locationAsked = true
+      return
+    }
+    if (!isUserMessage(m)) return
+    if (locationAsked) locationAnswered = true
+    const previous = list[i - 1]
+    const answeringProfile = isBotMessage(previous) && isProfileQuestion(previous.text)
+    if (answeringProfile) profileAnswered = true
+    type = type || submitterTypeFrom(m.text, answeringProfile)
+  })
 
-  if (askedAt < 0 || answerAt < 0) {
+  if (!type && !profileAnswered) {
     return { ...result, reply: PROFILE_QUESTION, readyToDraft: false, suggestions: ['Individual', 'Organisation'] }
   }
-
-  // The branch's single follow-up (location, or organisation name + location).
-  if (afterQuestion.slice(answerAt + 1).some(isBotMessage)) return result
-  const answer = afterQuestion[answerAt].text
-  if (/\b(individual|solo)\b/i.test(answer)) {
-    return { ...result, reply: INDIVIDUAL_LOCATION_QUESTION, readyToDraft: false, suggestions: [] }
-  }
-  if (/organi[sz]ation/i.test(answer)) {
-    return { ...result, reply: ORGANISATION_QUESTION, readyToDraft: false, suggestions: [] }
+  if (type && !locationAnswered) {
+    const reply = type === 'individual' ? INDIVIDUAL_LOCATION_QUESTION : ORGANISATION_QUESTION
+    return { ...result, reply, readyToDraft: false, suggestions: [] }
   }
   return result
 }
