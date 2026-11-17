@@ -5,6 +5,7 @@ import {
   BUBBLE_APP_ENVIRONMENTS,
   BUBBLE_WORKFLOW_ENVIRONMENTS,
   bubbleAppUrl,
+  bubbleProjectRequestUrl,
   bubbleWorkflowUrl,
   resolveBubbleAppBaseUrl,
   resolveBubbleWorkflowBaseUrl,
@@ -42,6 +43,17 @@ test('builds Bubble navigation URLs from the selected base', () => {
   assert.equal(
     bubbleAppUrl('/client/proposals', BUBBLE_APP_ENVIRONMENTS.development),
     'https://app.equalreach.io/version-83k77/client/proposals',
+  )
+})
+
+test('sends the drafted project to the Bubble branch matching the deployment', () => {
+  assert.equal(
+    bubbleProjectRequestUrl('1700000000000x123', 'er-project-drafter-git-staging-equal-reach.vercel.app'),
+    'https://app.equalreach.io/version-83k77/client/project-request/1700000000000x123',
+  )
+  assert.equal(
+    bubbleProjectRequestUrl('1700000000000x123', 'er-project-drafter.vercel.app'),
+    'https://app.equalreach.io/client/project-request/1700000000000x123',
   )
 })
 

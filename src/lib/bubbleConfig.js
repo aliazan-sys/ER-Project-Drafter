@@ -27,6 +27,23 @@ export function bubbleAppUrl(path = '', baseUrl = BUBBLE_APP_BASE_URL) {
   return normalizedPath ? `${baseUrl}/${normalizedPath}` : baseUrl
 }
 
+// The staging branch deploys to https://er-project-drafter-git-staging-*.vercel.app.
+// Its embed lives in the Bubble development version, so after drafting it must
+// send the user to that version; production (and everything else) goes to live.
+export function isStagingHost(hostname = '') {
+  return /(^|[.-])git-staging-/i.test(String(hostname))
+}
+
+export function bubbleProjectRequestUrl(
+  projectId,
+  hostname = typeof window === 'undefined' ? '' : window.location.hostname,
+) {
+  const baseUrl = isStagingHost(hostname)
+    ? BUBBLE_APP_ENVIRONMENTS.development
+    : BUBBLE_APP_BASE_URL
+  return bubbleAppUrl(`/client/project-request/${encodeURIComponent(projectId)}`, baseUrl)
+}
+
 export function bubbleWorkflowUrl(path = '', baseUrl = BUBBLE_WORKFLOW_BASE_URL) {
   const normalizedPath = String(path).replace(/^\/+/, '')
   return normalizedPath ? `${baseUrl}/${normalizedPath}` : baseUrl
