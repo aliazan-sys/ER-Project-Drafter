@@ -12,7 +12,7 @@ import { getConversationSessionId, startConversation, resetConversation } from '
 import ProjectDraftModal, { REVIEW_STEP_INDEX } from './ProjectDraftModal.jsx'
 import { Message } from './Message.jsx'
 import { SparkleIcon, ArrowUpIcon, ReplyArrowIcon, DocIcon } from './Icons.jsx'
-import { bubbleAppUrl } from '../lib/bubbleConfig.js'
+import { bubbleAppUrl, bubbleProjectRequestUrl } from '../lib/bubbleConfig.js'
 import {
   hasPendingAssistantReply,
   suggestionsFromMessages,
@@ -212,7 +212,7 @@ function ChatPanel({
   }
 
   function navigateToBubbleProject() {
-    const url = bubbleAppUrl(`/client/project-request/${encodeURIComponent(existingProjectId)}`)
+    const url = bubbleProjectRequestUrl(existingProjectId)
     setProjectNavigationUrl(url)
     if (window.self === window.top) {
       window.location.assign(url)
@@ -550,8 +550,8 @@ function ChatPanel({
             {isPlatformEmbed && status === 'done' ? (
               <p className="composer-hint">
                 This conversation is complete and available for review only.
-                {projectNavigationUrl && (
-                  <> <a href={projectNavigationUrl} target="_top">Open your project</a></>
+                {existingProjectId && (
+                  <> <a href={projectNavigationUrl || bubbleProjectRequestUrl(existingProjectId)} target="_top">Open your project</a></>
                 )}
               </p>
             ) : (
